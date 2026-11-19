@@ -16,7 +16,6 @@ targets:
     platform: iOS
     deploymentTarget: 16.0
     bundleId: com.wqterm.app
-    info: WQTerm/Info.plist
     entitlements:
       com.apple.security.application-groups:
         - group.com.wqterm.app
