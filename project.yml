@@ -21,11 +21,9 @@ targets:
         - group.com.wqterm.app
       get-task-allow: true
     sources:
-      - path: WQTerm
-        excludes:
-          - Info.plist
-          - WQTerm.entitlements
-          - Localizable.strings
+      - path: WQTerm/App
+      - path: WQTerm/Core
+      - path: WQTerm/UI
     resources:
       - path: WQTerm/Resources/ios_system
       - path: WQTerm/Resources/node-ios-arm64
