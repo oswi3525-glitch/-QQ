@@ -1,0 +1,53 @@
+name: WQTerm
+options:
+  bundleIdPrefix: com.wqterm.app
+  deploymentTarget:
+    iOS: 16.0
+  xcodeVersion: "15.4"
+  createIntergroupGroups: true
+  useTestPaths: false
+  indentWidth: 2
+  tabWidth: 2
+
+packages: []
+
+targets:
+  WQTerm:
+    type: application
+    platform: iOS
+    deploymentTarget: 16.0
+    bundleId: com.wqterm.app
+    info:
+      path: WQTerm/Info.plist
+    entitlements: WQTerm/WQTerm.entitlements
+    sources:
+      - path: WQTerm
+        excludes:
+          - Info.plist
+          - WQTerm.entitlements
+          - Localizable.strings
+    resources:
+      - path: WQTerm/Resources/ios_system
+      - path: WQTerm/Resources/node-ios-arm64
+      - path: WQTerm/Resources/node_modules
+      - path: WQTerm/Resources/Recipes
+      - path: WQTerm/Localizable.strings
+    settings:
+      INFOPLIST_FILE: WQTerm/Info.plist
+      CODE_SIGN_ENTITLEMENTS: WQTerm/WQTerm.entitlements
+      PRODUCT_BUNDLE_IDENTIFIER: com.wqterm.app
+      SWIFT_VERSION: 5.9
+      CODE_SIGN_STYLE: Manual
+      CODE_SIGN_IDENTITY: ""
+      CODE_SIGNING_ALLOWED: NO
+      CODE_SIGNING_REQUIRED: NO
+      OTHER_LDFLAGS: ""
+      ENABLE_BITCODE: NO
+      ENABLE_HARDENED_RUNTIME: NO
+
+    scheme:
+      buildSettings:
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+      testPlan: null

@@ -1,0 +1,45 @@
+# Xcode
+.build/
+DerivedData/
+*.xcuserstate
+*.xccheckout
+*.xcblueprint
+*.xcmakeoptions
+*.xctestplan
+*.DS_Store
+*.swp
+*.swo
+
+# Xcode project - keep project.pbxproj and schemes, ignore user data
+!WQTerm.xcodeproj/project.pbxproj
+!WQTerm.xcodeproj/xcshareddata/xcschemes/
+WQTerm.xcodeproj/xcuserdata/
+WQTerm.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.build/
+Packages/
+Package.resolved
+
+# iOS build artifacts
+build/
+*.ipa
+*.xcarchive
+*.app
+*.dSYM
+
+# CocoaPods
+Pods/
+Podfile.lock
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# WQTerm specific
+WQTerm/.terminal/
+.wqterm-config.zip
+BetaFeedback/Reports/
+
