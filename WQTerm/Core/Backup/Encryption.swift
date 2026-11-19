@@ -24,7 +24,8 @@ final class Encryption {
     func encrypt(_ data: Data) throws -> Data {
         let key = try symmetricKey
         let box = try AES.GCM.seal(data, using: key)
-        return box.combined
+        guard let combined = box.combined else { throw CocoaError(.coderInvalidValue) }
+        return combined
     }
 
     func decrypt(_ data: Data) throws -> Data {
