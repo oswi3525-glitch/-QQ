@@ -19,7 +19,10 @@ targets:
     bundleId: com.wqterm.app
     info:
       path: WQTerm/Info.plist
-    entitlements: WQTerm/WQTerm.entitlements
+    entitlements:
+      com.apple.security.application-groups:
+        - group.com.wqterm.app
+      get-task-allow: true
     sources:
       - path: WQTerm
         excludes:
