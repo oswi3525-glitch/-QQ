@@ -1,18 +1,25 @@
 import SwiftUI
 
 /// KeyboardAccessoryView: 2 hàng nút terminal (PRD Module 5).
+/// Đầy đủ haptic feedback, nối sự kiện delegate vào TerminalView.
 struct KeyboardAccessoryView: View {
     var onKey: (String) -> Void
 
+    /// Hàng 1 — Điều hướng: ESC, TAB, Ctrl, Alt, ↑↓←→, Home, End, PgUp, PgDn
     let row1: [[String]] = [
         ["ESC", "TAB", "Ctrl", "Alt"],
         ["↑", "↓", "←", "→"],
         ["Home", "End", "PgUp", "PgDn"]
     ]
+
+    /// Hàng 2 — Clipboard & tiện ích: Copy, Paste, Select All, Clear, Kill, Menu
     let row2: [[String]] = [
         ["Copy", "Paste", "Select All", "Clear"],
         ["Kill", "Menu"]
     ]
+
+    /// Haptic feedback generator (tạo nhấn nhẹ khi bấm nút)
+    private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,21 +28,30 @@ struct KeyboardAccessoryView: View {
                 ForEach(Array(row1.enumerated()), id: \.offset) { _, keys in
                     HStack(spacing: 4) {
                         ForEach(keys, id: \.self) { key in
-                            AccessoryKey(title: key) { onKey(key) }
+                            AccessoryKey(title: key) {
+                                impactFeedback.impactOccurred()
+                                onKey(key)
+                            }
                         }
                     }
                 }
                 ForEach(Array(row2.enumerated()), id: \.offset) { _, keys in
                     HStack(spacing: 4) {
                         ForEach(keys, id: \.self) { key in
-                            AccessoryKey(title: key) { onKey(key) }
+                            AccessoryKey(title: key) {
+                                impactFeedback.impactOccurred()
+                                onKey(key)
+                            }
                         }
                     }
                 }
             }
             .padding(6)
         }
-        .frame(maxHeight: 180) // 44pt/hàng x 4 hàng + padding
+        .frame(maxHeight: 200) // 44pt/hàng x 5 hàng + padding
+        .onAppear {
+            impactFeedback.prepare()
+        }
     }
 }
 

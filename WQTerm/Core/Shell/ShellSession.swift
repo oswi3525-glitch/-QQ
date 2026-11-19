@@ -25,6 +25,9 @@ final class ShellSession: ObservableObject {
         guard !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return ("", nil)
         }
+        // Reset output trước khi chạy lệnh mới (tránh hiển thị output cũ)
+        lastOutput = ""
+        lastError = nil
         history.append(command)
         if history.count > 1000 { history.removeFirst(history.count - 1000) }
 
