@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "WQTerm",
-    platforms: [.iOS(.v26)],
+    platforms: [.iOS(.v16)],
     products: [
         .library(name: "WQTermCore", targets: ["WQTermCore"])
     ],
