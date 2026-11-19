@@ -44,36 +44,17 @@ final class FeedbackManager {
         let reportFolders = (try? fileManager.contentsOfDirectory(at: reportsDirectory, includingPropertiesForKeys: nil, options: [])) ?? []
         guard !reportFolders.isEmpty else { return nil }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
         // zip -r <output.zip> <folder1> <folder2> ...
-        var args = ["-r", zipURL.path]
-        for folder in reportFolders {
-            args.append(folder.path)
+        let arguments = ["-r", zipURL.path] + reportFolders.map(\.path)
+        let command = (["zip"] + arguments).map(CommandRunner.shellQuote).joined(separator: " ")
+        let result = CommandRunner.runCommand(command)
+        if result.status == 0 {
+            BetaFeedbackLog.system("Xuất file zip báo cáo lỗi: \(zipURL.path)")
+            return zipURL
         }
-        process.arguments = args
-        process.currentDirectoryURL = reportsDirectory.deletingLastPathComponent()
-
-        let errorPipe = Pipe()
-        process.standardError = errorPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-
-            if process.terminationStatus == 0 {
-                BetaFeedbackLog.system("Xuất file zip báo cáo lỗi: \(zipURL.path)")
-                return zipURL
-            } else {
-                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                let errorMsg = String(data: errorData, encoding: .utf8) ?? "Lỗi nén zip không xác định (mã \(process.terminationStatus))"
-                BetaFeedbackLog.system("Lỗi nén zip: \(errorMsg)")
-                return nil
-            }
-        } catch {
-            BetaFeedbackLog.system("Lỗi nén zip: \(error.localizedDescription)")
-            return nil
-        }
+        let errorMsg = result.output.isEmpty ? "Lỗi nén zip không xác định (mã \(result.status))" : result.output
+        BetaFeedbackLog.system("Lỗi nén zip: \(errorMsg)")
+        return nil
     }
 
     /// Lấy UIViewController root hiện tại để present UIActivityViewController.

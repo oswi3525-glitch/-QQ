@@ -12,26 +12,25 @@ final class Encryption {
     var symmetricKey: SymmetricKey {
         get throws {
             // Lấy key từ Keychain, nếu chưa có thì sinh mới
-            if let data = try? keychain.read(key: "WQTerm.BackupKey"),
-               let key = try? SymmetricKey(data: data) {
-                return key
+            if let data = try? keychain.read(key: "WQTerm.BackupKey") {
+                return SymmetricKey(data: data)
             }
             let newKey = SymmetricKey(size: .bits256)
-            try keychain.write(key: "WQTerm.BackupKey", data: newKey.dataRepresentation)
+            try keychain.write(key: "WQTerm.BackupKey", data: newKey.withUnsafeBytes { Data($0) })
             return newKey
         }
     }
 
     func encrypt(_ data: Data) throws -> Data {
         let key = try symmetricKey
-        let box = try AESGCM.seal(data, using: key)
+        let box = try AES.GCM.seal(data, using: key)
         return box.combined
     }
 
     func decrypt(_ data: Data) throws -> Data {
         let key = try symmetricKey
-        let box = try AESGCM.SealedBox(combined: data)
-        return try AESGCM.open(box, using: key)
+        let box = try AES.GCM.SealedBox(combined: data)
+        return try AES.GCM.open(box, using: key)
     }
 }
 

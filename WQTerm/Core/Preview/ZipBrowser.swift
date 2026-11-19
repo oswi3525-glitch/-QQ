@@ -87,7 +87,6 @@ final class ZipBrowser {
         // Offset 42: Relative offset of local header (4 bytes)
         // Offset 46: File name (variable)
 
-        let cdEnd = cdOffset + cdSize
         var pos = cdOffset
 
         for _ in 0..<totalEntries {

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Thực thi lệnh shell và hook write-ahead snapshot trước các lệnh ghi (PRD Module 1 & Module 3).
-/// Trên iOS thực tế, lệnh được chạy qua Process/posix_spawn liên kết với ios_system (a-Shell fork).
+/// Trên iOS, lệnh được chuyển qua CommandRunner.
 final class CommandExecutor {
     static let shared = CommandExecutor()
     private let safeMode = SafeMode.shared
@@ -28,8 +28,8 @@ final class CommandExecutor {
             SnapshotManager.shared.createWriteAheadSnapshot(for: command, cwd: workingDirectory.path)
         }
 
-        // Thực thi lệnh qua Process (trên iOS cần link với ios_system / a-Shell binary).
-        let result = runProcess(command: command, workingDirectory: workingDirectory.path)
+        // Thực thi lệnh qua ios_system.
+        let result = runShellCommand(command: command, workingDirectory: workingDirectory.path)
 
         AuditLogger.shared.log(event: .fileWrite(path: workingDirectory.path))
         return result
@@ -40,36 +40,14 @@ final class CommandExecutor {
         return writeKeywords.contains { lower.contains($0) }
     }
 
-    // MARK: - Process execution
+    // MARK: - Command execution
 
-    private func runProcess(command: String, workingDirectory: String) -> (output: String, error: String?) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", command]
-        process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
-
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-
-            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-
-            let output = String(data: stdoutData, encoding: .utf8) ?? ""
-            let errorOutput = String(data: stderrData, encoding: .utf8) ?? ""
-
-            if process.terminationStatus == 0 {
-                return (output, errorOutput.isEmpty ? nil : errorOutput)
-            } else {
-                return (output, errorOutput.isEmpty ? "Lệnh thoát với mã \(process.terminationStatus)" : errorOutput)
-            }
-        } catch {
-            return ("", "Không thể thực thi lệnh: \(error.localizedDescription)")
+    private func runShellCommand(command: String, workingDirectory: String) -> (output: String, error: String?) {
+        let command = "cd \(CommandRunner.shellQuote(workingDirectory)) && \(command)"
+        let result = CommandRunner.runCommand(command)
+        if result.status == 0 {
+            return (result.output, nil)
         }
+        return ("", result.output.isEmpty ? "Lệnh thoát với mã \(result.status)" : result.output)
     }
 }

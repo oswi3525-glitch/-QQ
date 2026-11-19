@@ -25,30 +25,14 @@ final class GeminiAdapter: AICLIAdapter {
             return ("", "Node.js runtime không tìm thấy. Vui lòng cài đặt node-ios-arm64 trong Resources.")
         }
         let cliPath = Bundle.main.bundleURL.appendingPathComponent(binaryRelativePath).path
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: nodePath)
-        process.arguments = [cliPath] + arguments
-        process.environment = fullEnv
-
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-            let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: stdoutData, encoding: .utf8) ?? ""
-            let errorOutput = String(data: stderrData, encoding: .utf8) ?? ""
-            if process.terminationStatus == 0 {
-                return (output, errorOutput.isEmpty ? nil : errorOutput)
-            } else {
-                return (output, errorOutput.isEmpty ? "Gemini CLI thoát với mã \(process.terminationStatus)" : errorOutput)
-            }
-        } catch {
-            return ("", "Không thể thực thi Gemini CLI: \(error.localizedDescription)")
+        let envPrefix = fullEnv.sorted { $0.key < $1.key }
+            .map { "\($0.key)=\(CommandRunner.shellQuote($0.value))" }
+            .joined(separator: " ")
+        let command = "\(envPrefix) \( ([nodePath, cliPath] + arguments).map(CommandRunner.shellQuote).joined(separator: " ") )"
+        let result = CommandRunner.runCommand(command)
+        if result.status == 0 {
+            return (result.output, nil)
         }
+        return ("", result.output.isEmpty ? "Gemini CLI thoát với mã \(result.status)" : result.output)
     }
 }

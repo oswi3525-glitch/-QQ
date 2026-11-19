@@ -57,15 +57,18 @@ struct FeedbackFormView: View {
 
     private func submit() {
         let report = FeedbackReport(type: selectedType, description: description)
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
         // Chụp ảnh màn hình hiện tại
-        let screenshot = UIApplication.shared.windows.first { $0.isKeyWindow }?
+        let screenshot = windows.first { $0.isKeyWindow }?
             .rootViewController?.view?.takeScreenshot()
         let saved = FeedbackManager.shared.saveReport(report, screenshot: screenshot)
 
         if saved != nil {
             // Xuất file zip ngay cho người dùng share
             if let zipURL = FeedbackManager.shared.exportAllReportsZip() {
-                if let rootVC = UIApplication.shared.windows.first(where: { $0.isKeyWindow })?
+                if let rootVC = windows.first(where: { $0.isKeyWindow })?
                     .rootViewController {
                     FeedbackManager.shared.presentShare(from: rootVC, fileURL: zipURL)
                 }

@@ -13,34 +13,17 @@ final class ContainerArchiver {
         try fileManager.createDirectory(at: destination.deletingLastPathComponent(),
                                         withIntermediateDirectories: true, attributes: nil)
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-        process.arguments = ["-czf", destination.path, "-C", containerURL.deletingLastPathComponent().path, containerURL.lastPathComponent]
-        process.currentDirectoryURL = containerURL.deletingLastPathComponent()
-
-        let errorPipe = Pipe()
-        process.standardError = errorPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-
-            if process.terminationStatus == 0 {
-                progress?(1.0)
-                AuditLogger.shared.log(event: .backupCreated(path: destination.path))
-                return destination
-            } else {
-                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                let errorMsg = String(data: errorData, encoding: .utf8) ?? "Lỗi nén tar.gz không xác định (mã \(process.terminationStatus))"
-                throw NSError(domain: "WQTerm.ContainerArchiver", code: Int(process.terminationStatus),
-                              userInfo: [NSLocalizedDescriptionKey: errorMsg])
-            }
-        } catch let error as NSError {
-            throw error
-        } catch {
-            throw NSError(domain: "WQTerm.ContainerArchiver", code: -1,
-                          userInfo: [NSLocalizedDescriptionKey: error.localizedDescription])
+        let arguments = ["-czf", destination.path, "-C", containerURL.deletingLastPathComponent().path, containerURL.lastPathComponent]
+        let command = (["tar"] + arguments).map(CommandRunner.shellQuote).joined(separator: " ")
+        let result = CommandRunner.runCommand(command)
+        if result.status == 0 {
+            progress?(1.0)
+            AuditLogger.shared.log(event: .backupCreated(path: destination.path))
+            return destination
         }
+        let errorMsg = result.output.isEmpty ? "Lỗi nén tar.gz không xác định (mã \(result.status))" : result.output
+        throw NSError(domain: "WQTerm.ContainerArchiver", code: Int(result.status),
+                      userInfo: [NSLocalizedDescriptionKey: errorMsg])
     }
 
     /// Liệt kê các file backup đã lưu trong thư mục.

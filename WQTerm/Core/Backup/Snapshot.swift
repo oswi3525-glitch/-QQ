@@ -18,7 +18,7 @@ final class SnapshotManager {
 
         do {
             let attrs = try fileManager.attributesOfItem(atPath: targetURL.path)
-            let fileSize = (attrs[.size] as? NSNumber)?.uint64 ?? 0
+            let fileSize = (attrs[.size] as? NSNumber)?.uint64Value ?? 0
             guard fileSize <= maxFileBytes else {
                 AuditLogger.shared.log(event: .writeAheadSnapshot(command: command, target: targetPath))
                 return // file quá lớn, bỏ qua
@@ -79,12 +79,12 @@ final class SnapshotManager {
         }
         var total: UInt64 = 0
         for url in sorted {
-            total += (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+            total += UInt64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
         }
-        var sortedAsc = sorted.reversed() // cũ nhất trước
+        let sortedAsc = Array(sorted.reversed()) // cũ nhất trước
         var idx = 0
         while total > maxTotalBytes, idx < sortedAsc.count {
-            let size = (try? sortedAsc[idx].resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+            let size = UInt64((try? sortedAsc[idx].resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
             try? fileManager.removeItem(at: sortedAsc[idx])
             total -= size
             idx += 1

@@ -17,7 +17,7 @@ final class PairingManager: ObservableObject {
 
     /// Tạo mã hiển thị cho người dùng nhập trong Settings › Developer Mode.
     static func generateCode() -> String {
-        String((0..<6).map { _ in Int.random(in: 0...9) })
+        (0..<6).map { _ in String(Int.random(in: 0...9)) }.joined()
     }
 
     func refreshCode() {

@@ -21,7 +21,7 @@
 - Workflow Automation, Container Diff, Safe Share
 
 ## Yêu cầu hệ thống
-- iOS 26.0–27.3 Beta 1 (hỗ trợ đầy đủ: 27.0–27.2.1)
+- iOS 26.0–27.2.1 (hỗ trợ đầy đủ: 27.0–27.2.1). **Từ iOS 27.3 Beta 2 trở đi sẽ không hoạt động** (Apple đã vá worse_query).
 - App Group entitlement: `group.com.wqterm.app`
 - Ký bằng SideStore/AltStore (KHÔNG dùng Sideloadly)
 

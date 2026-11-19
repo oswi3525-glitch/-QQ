@@ -13,10 +13,11 @@ final class PlistViewer {
     }
 
     func rawXML(url: URL) -> String? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)
-            .flatMap { try? PropertyListSerialization.data(fromPropertyList: $0, format: .xml, options: 0) }
-            .map { String(data: $0, encoding: .utf8) } ?? nil
+        guard let data = try? Data(contentsOf: url),
+              let obj = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let xml = try? PropertyListSerialization.data(fromPropertyList: obj, format: .xml, options: 0)
+        else { return nil }
+        return String(data: xml, encoding: .utf8)
     }
 
     /// Edit plist với backup write-ahead trước khi ghi (PRD Module 3).
