@@ -68,7 +68,10 @@ enum CRC32 {
 
     /// CRC của file lớn, đọc theo chunk 1MB để không nạp cả file vào RAM.
     static func checksum(of url: URL) throws -> UInt32 {
-        guard let handle = FileHandle(forReadingFrom: url) else {
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forReadingFrom: url)
+        } catch {
             throw CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: url.path])
         }
         defer { try? handle.close() }

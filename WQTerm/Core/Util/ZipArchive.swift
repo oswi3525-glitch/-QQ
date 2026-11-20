@@ -63,8 +63,13 @@ enum ZipArchive {
         let fileManager = FileManager.default
         try? fileManager.createDirectory(at: destination.deletingLastPathComponent(),
                                          withIntermediateDirectories: true, attributes: nil)
-        guard fileManager.createFile(atPath: destination.path, contents: nil),
-              let handle = FileHandle(forWritingTo: destination) else {
+        guard fileManager.createFile(atPath: destination.path, contents: nil) else {
+            throw ZipError.cannotCreate(destination.path)
+        }
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forWritingTo: destination)
+        } catch {
             throw ZipError.cannotCreate(destination.path)
         }
         defer { try? handle.close() }
@@ -233,7 +238,10 @@ enum ZipArchive {
 
     /// Stream nguyên file vào archive, cập nhật số byte đã ghi.
     private static func copyFile(at url: URL, to output: FileHandle, offset: inout UInt64) throws {
-        guard let input = FileHandle(forReadingFrom: url) else {
+        let input: FileHandle
+        do {
+            input = try FileHandle(forReadingFrom: url)
+        } catch {
             throw ZipError.cannotOpen(url.path)
         }
         defer { try? input.close() }

@@ -122,17 +122,6 @@ struct PairingJITView: View {
     }
 }
 
-/// Wrapper `UIActivityViewController` để chia sẻ file (pairing, log, backup).
-struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
-}
-
 /// Bọc một `URL` để dùng với `.sheet(item:)` mà không cần mở rộng `URL`.
 struct SharePayload: Identifiable {
     let url: URL

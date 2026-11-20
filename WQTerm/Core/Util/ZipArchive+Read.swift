@@ -9,7 +9,10 @@ extension ZipArchive {
 
     /// Danh sách entry đọc từ central directory (không giải nén).
     static func listEntries(_ archive: URL) throws -> [Entry] {
-        guard let handle = FileHandle(forReadingFrom: archive) else {
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forReadingFrom: archive)
+        } catch {
             throw ZipError.cannotOpen(archive.path)
         }
         defer { try? handle.close() }
@@ -89,7 +92,10 @@ extension ZipArchive {
     static func extract(_ archive: URL, to destination: URL) throws {
         let fileManager = FileManager.default
         let entries = try listEntries(archive)
-        guard let handle = FileHandle(forReadingFrom: archive) else {
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forReadingFrom: archive)
+        } catch {
             throw ZipError.cannotOpen(archive.path)
         }
         defer { try? handle.close() }

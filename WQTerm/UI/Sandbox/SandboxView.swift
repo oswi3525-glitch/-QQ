@@ -63,7 +63,6 @@ struct SandboxView: View {
                 }
         }
     }
-
     // MARK: - Content
 
     @ViewBuilder
@@ -194,23 +193,6 @@ struct SandboxView: View {
             }
         })
     }
-}
-
-/// Bọc `URL` để dùng với `.sheet(item:)`.
-struct ShareItem: Identifiable {
-    let url: URL
-    var id: String { url.path }
-}
-
-/// `UIActivityViewController` cho SwiftUI (dùng để lưu IPA ra Files app).
-struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 /// Chi tiết một app: metadata, đường dẫn container, nút mở bằng tab Files.

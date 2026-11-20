@@ -1,3 +1,5 @@
+import Foundation
+
 /// Chuyển đổi thời gian sang định dạng DOS (dùng trong header ZIP).
 enum ZipTime {
     static func dosDateTime(_ date: Date) -> (time: UInt16, date: UInt16) {
