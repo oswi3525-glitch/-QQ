@@ -182,22 +182,42 @@ final class TerminalInputField: UITextField, UITextFieldDelegate {
         onControlSequence?(payload)
     }
 
-    /// Phím hành động của thanh phụ.
+    /// Phím hành động của thanh phụ (Module 6: "nút Copy/Paste phải hoạt động").
+    ///
+    /// - COPY: ưu tiên copy **dòng đang gõ**; nếu trống thì copy toàn bộ transcript.
+    /// - PASTE: chèn clipboard vào vị trí con trỏ, bỏ ký tự xuống dòng để không phá
+    ///   layout một dòng của prompt.
+    /// - SELECT ALL / CLEAR: chọn toàn dòng / xoá dòng + màn hình.
     private func handleAction(_ action: String) {
         switch action {
         case "COPY":
-            UIPasteboard.general.string = onCopyTranscript?() ?? ""
+            let line = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let payload = line.isEmpty ? (onCopyTranscript?() ?? "") : line
+            guard !payload.isEmpty else { return }
+            UIPasteboard.general.string = payload
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            onControlSequence?("COPY \(payload.count) ký tự")
+
         case "PASTE":
-            if let pasted = UIPasteboard.general.string {
-                let sanitized = pasted.replacingOccurrences(of: "\n", with: " ")
-                text = (text ?? "") + sanitized
+            guard let pasted = UIPasteboard.general.string, !pasted.isEmpty else { return }
+            let sanitized = pasted
+                .replacingOccurrences(of: "\r\n", with: " ")
+                .replacingOccurrences(of: "\n", with: " ")
+            if let selected = selectedTextRange, !selected.isEmpty {
+                replace(selected, withText: sanitized)
+            } else {
+                insertText(sanitized)
             }
+            onControlSequence?("PASTE \(sanitized.count) ký tự")
+
         case "SELECT ALL":
             // Chọn toàn bộ dòng lệnh đang gõ.
             selectedTextRange = textRange(from: beginningOfDocument, to: endOfDocument)
+
         case "CLEAR":
             text = ""
             onClearScreen?()
+
         default:
             break
         }
@@ -212,7 +232,7 @@ struct TerminalInputRepresentable: UIViewRepresentable {
     func makeUIView(context: Context) -> TerminalInputField {
         let field = TerminalInputField()
         field.configure(prompt: "\(session.promptText) nhập lệnh…")
-        field.onSubmit = { command in session.run(command) }
+        field.onSubmit = { command in session.runInBackground(command) }
         field.onHistoryUp = { session.previousCommand() }
         field.onHistoryDown = { session.nextCommand() }
         field.onInterrupt = { session.sendInterrupt() }

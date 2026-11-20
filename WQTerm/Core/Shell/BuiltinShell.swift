@@ -21,7 +21,7 @@ final class BuiltinShell {
         case onSuccess  // sau `&&`
     }
 
-    private let fm = FileManager.default
+    let fm = FileManager.default
 
     private init() {}
 
@@ -29,7 +29,11 @@ final class BuiltinShell {
     static let commandNames: [String] = [
         "help", "pwd", "cd", "ls", "cat", "echo", "mkdir", "rmdir", "rm", "touch",
         "cp", "mv", "head", "tail", "wc", "grep", "find", "date", "whoami", "env",
-        "which", "clear"
+        "which", "clear",
+        // Module 5 — toolchain mở rộng
+        "unzip", "zip", "tar", "curl", "wget", "tools",
+        // Module 4 — AI CLI và IPA dumper
+        "ai", "ask", "ipa", "sbx"
     ]
 
     // MARK: - Entry point
@@ -400,6 +404,9 @@ final class BuiltinShell {
 
         // MARK: dispatch-part2
         default:
+            if let extended = runExtendedCommand(command, args: args, cwd: cwd) {
+                return extended
+            }
             return Output(status: 127,
                           text: "\(command): không tìm thấy lệnh. Gõ 'help' để xem danh sách.",
                           cwd: cwd)
@@ -408,7 +415,7 @@ final class BuiltinShell {
 
     // MARK: - Helpers
 
-    private func resolve(_ path: String, cwd: URL) -> URL {
+    func resolve(_ path: String, cwd: URL) -> URL {
         if path.isEmpty || path == "." { return cwd.standardizedFileURL }
         let expanded: String
         if path == "~" {
@@ -426,17 +433,17 @@ final class BuiltinShell {
             .standardizedFileURL
     }
 
-    private func isDirectory(_ url: URL) -> Bool {
+    func isDirectory(_ url: URL) -> Bool {
         var isDir: ObjCBool = false
         return fm.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
     }
 
-    private func readText(_ url: URL) -> String? {
+    func readText(_ url: URL) -> String? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
-    private func describe(_ url: URL, long: Bool) -> String {
+    func describe(_ url: URL, long: Bool) -> String {
         let attributes = (try? fm.attributesOfItem(atPath: url.path)) ?? [:]
         let directory = isDirectory(url)
         let name = url.lastPathComponent + (directory ? "/" : "")
@@ -498,6 +505,19 @@ final class BuiltinShell {
       grep [-i] [-n] <mẫu> <file...>
       find [dir] [-name <mẫu>]
       date | whoami | env | which <cmd> | clear
+
+    Toolchain mở rộng (Module 5):
+      unzip [-l] <file.zip> [dest]   Giải nén (engine ZIP thuần Swift)
+      zip <out.zip> <thư mục>        Nén thư mục thành ZIP
+      tar -czf out.zip <dir> | tar -xzf in.zip [dest]
+      curl [-o file] [-H "K: V"] <url>
+      wget <url>                     Tải file qua mạng
+      tools                          Bảng toolchain + PATH hiện tại
+
+    AI & Sandbox (Module 2 & 4):
+      ai [-f file] "câu hỏi"         Hỏi LiteRouter (deepseek-v4.1-flash-1017)
+      ipa <bundle-id>                Dump app thành .ipa trong Documents
+      sbx                            Danh sách app đã cài + trạng thái mount
 
     Nối lệnh: `cmd1 && cmd2`, `cmd1 ; cmd2`. Chuyển hướng: `> file`, `>> file`.
     """

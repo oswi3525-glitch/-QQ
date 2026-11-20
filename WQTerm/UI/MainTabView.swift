@@ -1,29 +1,33 @@
 import SwiftUI
 import UIKit
 
-/// Root của toàn bộ ứng dụng (M1–M10).
+/// Root của toàn bộ ứng dụng.
 ///
-/// Cấu trúc: `TabView` với **5 tab chính** đúng PRD:
-/// 1. Terminal   (M1 — Terminal Core, a-Shell + BuiltinShell fallback)
-/// 2. Sandbox    (M2 — WorseQuery, mount container)
-/// 3. Backup     (M3 — Snapshot Engine write-ahead)
-/// 4. AI & Runtimes (M4/M9 — AI CLI, Node/Python)
-/// 5. Settings   (M5–M10 — bàn phím phụ, Preview, Security, Pairing, JIT, Gestalt)
+/// Cấu trúc: `TabView` với **5 tab chính**:
+/// 1. Terminal  (M1 — Terminal Core, a-Shell + BuiltinShell fallback)
+/// 2. Sandbox   (M1/M2 — Auto worse_query, quét app, mount container, Dump IPA)
+/// 3. Files     (M3 — cây Documents + _sandbox, QuickLook, renderer)
+/// 4. AI        (M4 — LiteRouter chat + API key trong Keychain)
+/// 5. Settings  (M5–M10 — bàn phím phụ, Preview, Security, Pairing, JIT, Gestalt)
 ///
-/// Lưu ý kiến trúc: banner cảnh báo và nút feedback **không** được phủ lên `TabView`
-/// (bản cũ dùng `ZStack` khiến tab bar và navigation bar bị che → "giao diện lỗi").
-/// Chúng được đặt *bên trong* từng màn hình hoặc trong Settings.
+/// Banner cảnh báo **không** phủ lên `TabView` (bản cũ dùng `ZStack` khiến tab bar
+/// và navigation bar bị che). Nó được đặt *bên trong* từng màn hình.
+///
+/// Mọi tác vụ nặng (quét app, mount, dump, gọi API) chạy trên background queue —
+/// view chỉ đọc `@Published`, nên chuyển tab không bị treo (Module 6).
 struct MainTabView: View {
     @StateObject private var compatibility = IOSCompatibility.shared
     @StateObject private var security = SecurityManager.shared
+    @StateObject private var sandbox = SandboxManager.shared
+    @StateObject private var tabSelection = TabSelection()
 
-    @State private var selection: Tab = .terminal
+    // selection giờ do TabSelection giữ để màn hình con đổi tab được.
 
     /// 5 tab chính của app.
     enum Tab: String, CaseIterable, Identifiable {
         case terminal
         case sandbox
-        case backup
+        case files
         case ai
         case settings
 
@@ -33,7 +37,7 @@ struct MainTabView: View {
             switch self {
             case .terminal: return "Terminal"
             case .sandbox: return "Sandbox"
-            case .backup: return "Backup"
+            case .files: return "Files"
             case .ai: return "AI"
             case .settings: return "Cài đặt"
             }
@@ -43,20 +47,9 @@ struct MainTabView: View {
             switch self {
             case .terminal: return "terminal"
             case .sandbox: return "externaldrive.connected.to.line.below"
-            case .backup: return "clock.arrow.circlepath"
+            case .files: return "folder"
             case .ai: return "sparkles"
             case .settings: return "gearshape"
-            }
-        }
-
-        /// Module tương ứng trong PRD, dùng cho accessibility label.
-        var moduleLabel: String {
-            switch self {
-            case .terminal: return "M1 Terminal Core"
-            case .sandbox: return "M2 Sandbox"
-            case .backup: return "M3 Snapshot Engine"
-            case .ai: return "M4 AI CLI và Runtimes"
-            case .settings: return "M5 đến M10 Cài đặt"
             }
         }
     }
@@ -71,7 +64,12 @@ struct MainTabView: View {
                 tabView
             }
         }
-        .onAppear { compatibility.recheckOnForeground() }
+        .onAppear {
+            compatibility.recheckOnForeground()
+            // Module 1: tự động quét + mount container ngay khi MainView xuất hiện.
+            sandbox.bootstrap()
+            EnvironmentSetup.shared.prepareInBackground()
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             compatibility.recheckOnForeground()
             security.refreshLockState()
@@ -81,7 +79,10 @@ struct MainTabView: View {
     // MARK: - Tabs
 
     private var tabView: some View {
-        TabView(selection: $selection) {
+        TabView(selection: Binding(
+            get: { tabSelection.current },
+            set: { tabSelection.current = $0 }
+        )) {
             TerminalView()
                 .tabItem { Label(Tab.terminal.title, systemImage: Tab.terminal.systemImage) }
                 .tag(Tab.terminal)
@@ -90,11 +91,11 @@ struct MainTabView: View {
                 .tabItem { Label(Tab.sandbox.title, systemImage: Tab.sandbox.systemImage) }
                 .tag(Tab.sandbox)
 
-            BackupView()
-                .tabItem { Label(Tab.backup.title, systemImage: Tab.backup.systemImage) }
-                .tag(Tab.backup)
+            FilesView()
+                .tabItem { Label(Tab.files.title, systemImage: Tab.files.systemImage) }
+                .tag(Tab.files)
 
-            AICLISettingsView()
+            AIView()
                 .tabItem { Label(Tab.ai.title, systemImage: Tab.ai.systemImage) }
                 .tag(Tab.ai)
 
@@ -103,6 +104,7 @@ struct MainTabView: View {
                 .tag(Tab.settings)
         }
         .tint(.accentColor)
+        .environmentObject(tabSelection)
     }
 }
 

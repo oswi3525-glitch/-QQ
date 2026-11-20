@@ -44,6 +44,10 @@ final class ShellSession: ObservableObject {
     // MARK: - Execution
 
     /// Chạy một lệnh, ghi kết quả vào transcript.
+    ///
+    /// Chạy **đồng bộ** trên luồng gọi. `TerminalInputField` gọi hàm này từ
+    /// `runInBackground`, nên UI không bị chặn (Module 6: "chạy tác vụ nặng dưới
+    /// background thread").
     @discardableResult
     func run(_ command: String) -> (status: Int32, output: String) {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -58,9 +62,7 @@ final class ShellSession: ObservableObject {
         history.append(trimmed)
         historyCursor = nil
 
-        isRunning = true
         let result = CommandRunner.run(trimmed, cwd: currentDirectory)
-        isRunning = false
 
         currentDirectory = result.cwd
         if !result.output.isEmpty {
@@ -69,6 +71,46 @@ final class ShellSession: ObservableObject {
             append(.error, "Lệnh thoát với mã \(result.status)")
         }
         return (result.status, result.output)
+    }
+
+    /// Chạy lệnh trên background queue rồi cập nhật transcript ở main thread.
+    ///
+    /// Dùng cho UI: tránh treo khi lệnh mạng (`curl`, `ai`) mất nhiều giây.
+    func runInBackground(_ command: String,
+                         completion: ((Int32, String) -> Void)? = nil) {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            completion?(0, "")
+            return
+        }
+        guard !isRunning else { return }
+
+        if trimmed == "clear" {
+            clearHistory()
+            completion?(0, "")
+            return
+        }
+
+        append(.command, "\(promptText) \(trimmed)")
+        history.append(trimmed)
+        historyCursor = nil
+        isRunning = true
+
+        let directory = currentDirectory
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = CommandRunner.run(trimmed, cwd: directory)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.currentDirectory = result.cwd
+                if !result.output.isEmpty {
+                    self.append(result.status == 0 ? .output : .error, result.output)
+                } else if result.status != 0 {
+                    self.append(.error, "Lệnh thoát với mã \(result.status)")
+                }
+                self.isRunning = false
+                completion?(result.status, result.output)
+            }
+        }
     }
 
     /// Gửi tín hiệu ngắt (Ctrl+C) tới phiên hiện tại.

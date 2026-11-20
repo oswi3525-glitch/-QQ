@@ -10,7 +10,7 @@ struct ContainerBrowserView: View {
     @State private var message: String?
     @State private var pendingSensitive: String?
 
-    private let mounter = SandboxMounter.shared
+    private let mounter = SandboxManager.shared
 
     var body: some View {
         List {
@@ -99,7 +99,7 @@ struct ContainerBrowserView: View {
     // MARK: - Actions
 
     private func refresh() {
-        mounted = mounter.listMountedContainers().sorted()
+        mounted = mounter.mountedBundleIDs
     }
 
     private func mount() {
@@ -115,12 +115,17 @@ struct ContainerBrowserView: View {
 
     private func performMount(_ bundleID: String) {
         pendingSensitive = nil
-        if let url = mounter.mountContainer(bundleID: bundleID) {
+        switch mounter.mountContainer(bundleID: bundleID) {
+        case .mounted(let url):
             message = "Đã mount: \(url.path)"
             bundleIDInput = ""
             refresh()
-        } else {
-            message = "Mount thất bại: \(bundleID). Kiểm tra quyền App Group và phiên bản iOS."
+        case .failed(let reason):
+            message = "Mount thất bại: \(bundleID)\n\(reason)\n"
+                + "Kiểm tra quyền App Group và phiên bản iOS."
+        case .notMounted:
+            message = "Mount chưa hoàn tất: \(bundleID)."
+            refresh()
         }
     }
 }
@@ -129,24 +134,25 @@ struct ContainerBrowserView: View {
 struct MountedContainerView: View {
     let bundleID: String
 
-    @State private var items: [FileItem] = []
+    @State private var items: [FileNode] = []
     @State private var isMounted = false
 
     private var root: URL? {
-        SandboxMounter.shared.sandboxRoot?.appendingPathComponent(bundleID, isDirectory: true)
+        SandboxManager.shared.mountedURL(for: bundleID)
     }
 
     var body: some View {
         Group {
             if !isMounted {
                 ContentUnavailableView("Chưa mount", systemImage: "link.badge.plus",
-                                       description: Text("Container này chưa được mount trên thiết bị."))
+                                       description: Text("Container này chưa được mount trên thiết bị. "
+                                                         + "Mở tab Sandbox và bấm Mount lại."))
             } else if items.isEmpty {
                 ContentUnavailableView("Container trống", systemImage: "folder",
                                        description: Text("Không đọc được nội dung hoặc container rỗng."))
             } else {
-                List(items) { item in
-                    FileRow(item: item)
+                List(items) { node in
+                    FileNodeRow(node: node)
                 }
                 .listStyle(.plain)
             }
@@ -162,18 +168,15 @@ struct MountedContainerView: View {
             return
         }
         isMounted = true
-        let keys: [URLResourceKey] = [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey]
+        SandboxAccess.grantRead(to: root.path)
         let urls = (try? FileManager.default.contentsOfDirectory(at: root,
-                                                                 includingPropertiesForKeys: keys,
-                                                                 options: [.skipsHiddenFiles])) ?? []
-        items = urls.compactMap { url -> FileItem? in
-            let values = try? url.resourceValues(forKeys: Set(keys))
-            return FileItem(url: url,
-                            name: url.lastPathComponent,
-                            isDirectory: values?.isDirectory ?? false,
-                            size: UInt64(values?.fileSize ?? 0),
-                            modified: values?.contentModificationDate ?? .distantPast)
-        }
-        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                                                                 includingPropertiesForKeys: nil,
+                                                                 options: [])) ?? []
+        items = urls
+            .compactMap { FileNode.load($0) }
+            .sorted { lhs, rhs in
+                if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory }
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
     }
 }

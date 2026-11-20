@@ -59,7 +59,13 @@ enum CommandRunner {
     }
 
     /// Chạy một lệnh, trả về mã thoát, output và thư mục làm việc mới.
+    ///
+    /// Trước lần chạy đầu tiên, `EnvironmentSetup` được chuẩn bị đồng bộ để
+    /// `setup_env.sh` và `bin/` tồn tại — nhờ vậy người dùng gõ lệnh là chạy được
+    /// ngay (Module 5), không cần export PATH thủ công.
     static func run(_ command: String, cwd: URL) -> (status: Int32, output: String, cwd: URL) {
+        prepareEnvironmentIfNeeded()
+
         if isNativeShellAvailable {
             // ios_system thật ghi trực tiếp ra stdout của tiến trình.
             let status = command.withCString { ios_system($0) }
@@ -67,6 +73,21 @@ enum CommandRunner {
         }
         let result = BuiltinShell.shared.execute(command, cwd: cwd)
         return (result.status, result.text, result.cwd)
+    }
+
+    /// Chuẩn bị môi trường đúng một lần cho mỗi phiên chạy app.
+    private static let environmentLock = NSLock()
+    private static var hasPreparedEnvironment = false
+
+    static func prepareEnvironmentIfNeeded() {
+        environmentLock.lock()
+        defer { environmentLock.unlock() }
+        guard !hasPreparedEnvironment else { return }
+        hasPreparedEnvironment = true
+
+        let setup = EnvironmentSetup.shared
+        _ = try? setup.prepare()
+        setup.installAIScript()
     }
 
     /// Tương thích API cũ: chạy trong Documents của ứng dụng, chỉ lấy (status, output).

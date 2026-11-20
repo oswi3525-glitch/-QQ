@@ -37,9 +37,21 @@ targets:
       - path: WQTerm/Resources/node_modules
         type: folder
         buildPhase: resources
+      # Script Python cho lệnh `ai` (dùng requests, không dùng openai).
+      - path: WQTerm/Resources/Scripts
+        type: folder
+        buildPhase: resources
+      # Toolchain nhúng (curl/wget/tar/unzip/git/ffmpeg) — nếu có.
+      # Thư mục rỗng vẫn an toàn: EnvironmentSetup chỉ cài cái tồn tại.
+      - path: WQTerm/Resources/bin
+        type: folder
+        buildPhase: resources
+      # Node.js nhúng (NodeMobile.framework, 52MB arm64). Copy dạng folder
+      # reference để bundle luôn chứa framework mà không cần link/ký — build
+      # unsigned vẫn thành công, và RuntimeManager có thể load sau này.
       - path: WQTerm/Resources/node-ios-arm64
         type: folder
-        buildPhase: none
+        buildPhase: resources
       - path: WQTerm/Resources/Assets.xcassets
         buildPhase: resources
     settings:
@@ -55,6 +67,9 @@ targets:
         ENABLE_BITCODE: "NO"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # Cần để dyld tìm NodeMobile.framework trong app bundle.
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
         # Giữ nguyên Swift module cho mọi file C/ObjC-Interop
         SWIFT_OBJC_BRIDGING_HEADER: ""
+
 
