@@ -1,95 +1,92 @@
 import SwiftUI
 
-/// Màn hình terminal chính (M1): hiển thị output, nhập lệnh, bàn phéon phụ.
+/// Màn hình terminal chính (M1).
+/// Transcript ở trên, ô nhập lệnh ở dưới — bàn phím hệ thống + thanh phím phụ
+/// được gắn chuẩn qua `inputAccessoryView` của ô nhập.
 struct TerminalView: View {
     @StateObject private var session = ShellSession.shared
-    @State private var input: String = ""
-    @State private var scrollToBottom = false
+    @StateObject private var preferences = AccessoryPreferences.shared
+    @State private var isFocused = true
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Danh sách output terminal
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(session.history, id: \.self) { cmd in
-                            Text("> \(cmd)")
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            if !session.lastOutput.isEmpty {
-                                Text(session.lastOutput)
-                                    .font(.system(.body, design: .monospaced))
-                                    .foregroundColor(.primary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            if let error = session.lastError {
-                                Text(error)
-                                    .font(.system(.body, design: .monospaced))
-                                    .foregroundColor(.red)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
+        NavigationStack {
+            VStack(spacing: 0) {
+                statusBar
+                TerminalTranscriptView(session: session)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(uiColor: .systemBackground))
+                    .onTapGesture { isFocused = true }
+                inputBar
+            }
+            .navigationTitle("Terminal")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(role: .destructive) {
+                        session.clearHistory()
+                    } label: {
+                        Label("Xoá màn hình", systemImage: "trash")
                     }
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .disabled(session.entries.isEmpty)
                 }
-                .onChange(of: session.history.count) { _ in
-                    scrollToBottom = true
-                }
-            }
-
-            // Ô nhập lệnh
-            HStack(spacing: 8) {
-                TextField("Nhập lệnh...", text: $input, onCommit: {
-                    runCommand()
-                })
-                .textFieldStyle(.roundedBorder)
-                .autocapitalization(.none)
-                .disableAutocorrection(true)
-
-                Button("Chạy") {
-                    runCommand()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .padding()
-
-            // Nút Báo cáo lỗi nổi (tùy chọn, có thể bỏ nếu đã có floating button global)
-            // FeedbackButton() // đã đặt ở App.swift
-
-            // Bàn phím phụ terminal
-            KeyboardAccessoryView { key in
-                handleAccessoryKey(key)
             }
         }
-        .navigationTitle("Terminal")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func runCommand() {
-        let cmd = input
-        input = ""
-        session.run(cmd)
-    }
-
-    private func handleAccessoryKey(_ key: String) {
-        switch key {
-        case "Kill":
-            session.run("^C")
-        case "Clear":
-            session.clearHistory()
-        case "Copy":
-            UIPasteboard.general.string = session.lastOutput
-        case "Paste":
-            if let paste = UIPasteboard.general.string {
-                input += paste
-            }
-        case "Select All":
-            input = session.history.joined(separator: "\n")
-        default:
-            input += key
+        // Người dùng đổi cấu hình bàn phím phụ trong Settings → cập nhật ngay.
+        .onChange(of: preferences.enabledGroups) { _, _ in
+            isFocused = true
         }
+    }
+
+    // MARK: - Sections
+
+    private var statusBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "folder")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(session.relativeDirectoryLabel)
+                .font(.caption.monospaced())
+                .lineLimit(1)
+                .truncationMode(.head)
+            Spacer()
+            shellBadge
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color(uiColor: .secondarySystemBackground))
+    }
+
+    private var shellBadge: some View {
+        let native = CommandRunner.isNativeShellAvailable
+        return HStack(spacing: 4) {
+            Circle()
+                .fill(native ? Color.green : Color.orange)
+                .frame(width: 6, height: 6)
+            Text(CommandRunner.backendLabel)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(native
+                            ? "Đang dùng shell ios_system (a-Shell)"
+                            : "Đang dùng shell tích hợp BuiltinShell")
+    }
+
+    private var inputBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 6) {
+                Text(session.promptText)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.green)
+                    .lineLimit(1)
+                TerminalInputRepresentable(session: session, isFocused: $isFocused)
+                    .frame(height: 34)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+        }
+        .background(.bar)
     }
 }
+

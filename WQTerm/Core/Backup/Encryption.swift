@@ -66,6 +66,18 @@ final class KeychainService {
         guard status == errSecSuccess else { throw BackupError.keychainFailure(status: Int(status)) }
         return item as? Data
     }
+
+    /// Xoá một item khỏi Keychain (không lỗi nếu item chưa tồn tại).
+    func delete(key: String) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw BackupError.keychainFailure(status: Int(status))
+        }
+    }
 }
 
 enum BackupError: LocalizedError {

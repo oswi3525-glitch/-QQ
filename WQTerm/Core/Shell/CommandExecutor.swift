@@ -23,9 +23,16 @@ final class CommandExecutor {
             return ("", blockReason)
         }
 
-        // Write-ahead snapshot: sao chép file đích trước khi lệnh ghi chạy
+        // Write-ahead snapshot: sao chép file đích trước khi lệnh ghi chạy.
+        // Nếu backup thất bại → huỷ bỏ lệnh ghi (PRD Nguyên tắc 3).
         if isWriteCommand(command) {
-            SnapshotManager.shared.createWriteAheadSnapshot(for: command, cwd: workingDirectory.path)
+            let backedUp = SnapshotManager.shared.createWriteAheadSnapshot(for: command,
+                                                                          cwd: workingDirectory.path)
+            let targetExists = SnapshotManager.writeTarget(in: command, cwd: workingDirectory.path)
+                .map { fileManager.fileExists(atPath: $0.path) } ?? false
+            if targetExists && !backedUp {
+                return ("", "Huỷ lệnh ghi: không tạo được snapshot write-ahead cho file đích.")
+            }
         }
 
         // Thực thi lệnh qua ios_system.

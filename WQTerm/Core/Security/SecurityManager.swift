@@ -20,4 +20,22 @@ final class SecurityManager: ObservableObject {
             }
         }
     }
+
+    /// Đồng bộ lại trạng thái khoá khi app quay lại foreground (PRD Module 6).
+    /// Nếu FaceID bật và phiên đã quá timeout thì khoá lại.
+    func refreshLockState() {
+        guard FaceIDLock.shared.isEnabled else {
+            isLocked = false
+            return
+        }
+        if FaceIDLock.shared.requireReAuthIfNeeded() {
+            isLocked = true
+        }
+    }
+
+    /// Bật/tắt Face ID lock từ Settings.
+    func setFaceIDEnabled(_ enabled: Bool) {
+        FaceIDLock.shared.setEnabled(enabled)
+        if !enabled { isLocked = false }
+    }
 }

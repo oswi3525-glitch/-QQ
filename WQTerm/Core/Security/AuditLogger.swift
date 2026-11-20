@@ -18,6 +18,10 @@ enum AuditEvent: Equatable {
     case faceIDLock
     case faceIDUnlock
     case safeModeToggled(enabled: Bool)
+    case gestaltRead(path: String)
+    case gestaltWrite(key: String)
+    case gestaltWriteBlocked(reason: String)
+    case gestaltRestored(path: String)
 
     var name: String {
         switch self {
@@ -37,6 +41,10 @@ enum AuditEvent: Equatable {
         case .faceIDLock: return "face_id_lock"
         case .faceIDUnlock: return "face_id_unlock"
         case .safeModeToggled: return "safe_mode_toggled"
+        case .gestaltRead: return "gestalt_read"
+        case .gestaltWrite: return "gestalt_write"
+        case .gestaltWriteBlocked: return "gestalt_write_blocked"
+        case .gestaltRestored: return "gestalt_restored"
         }
     }
 }

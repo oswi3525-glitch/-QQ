@@ -22,9 +22,10 @@ final class RestoreManager {
         let files = try fileManager.contentsOfDirectory(at: snapshotURL, includingPropertiesForKeys: nil, options: [])
         for fileURL in files {
             let dest = documentsURL.appendingPathComponent(fileURL.lastPathComponent, isDirectory: false)
-            // Write-ahead: backup file đích trước khi ghi đè (nếu tồn tại)
+            // Write-ahead: backup file đích trước khi ghi đè (nếu tồn tại).
+            // Backup thất bại ⇒ ném lỗi ⇒ HUỶ toàn bộ thao tác restore.
             if fileManager.fileExists(atPath: dest.path) {
-                SnapshotManager.shared.createWriteAheadSnapshot(for: "restore overwrite", cwd: documentsURL.path)
+                try SnapshotEngine.createSnapshot(for: dest)
             }
             try fileManager.copyItem(at: fileURL, to: dest)
             AuditLogger.shared.log(event: .fileWrite(path: dest.path))

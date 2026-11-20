@@ -2,7 +2,9 @@ name: WQTerm
 options:
   bundleIdPrefix: com.wqterm.app
   deploymentTarget:
-    iOS: "16.0"
+    # iOS 17 là mức tối thiểu cho ContentUnavailableView / NavigationSplitView /
+    # .topBarLeading — các API được dùng xuyên suốt tầng UI.
+    iOS: "17.0"
   xcodeVersion: "15.4"
   createIntermediateGroups: true
   indentWidth: 2
@@ -12,7 +14,7 @@ targets:
   WQTerm:
     type: application
     platform: iOS
-    deploymentTarget: "16.0"
+    deploymentTarget: "17.0"
     entitlements:
       path: WQTerm/WQTerm.entitlements
       properties:
@@ -25,6 +27,10 @@ targets:
       - path: WQTerm/UI
       - path: WQTerm/Localizable.strings
         buildPhase: resources
+      # a-Shell: header + mã C (stub ios_system.c nằm trong Core/Shell)
+      - path: WQTerm/Resources/ios_system
+        type: folder
+        buildPhase: resources
       - path: WQTerm/Resources/Recipes
         type: folder
         buildPhase: resources
@@ -33,7 +39,7 @@ targets:
         buildPhase: resources
       - path: WQTerm/Resources/node-ios-arm64
         type: folder
-        buildPhase: resources
+        buildPhase: none
       - path: WQTerm/Resources/Assets.xcassets
         buildPhase: resources
     settings:
@@ -41,9 +47,14 @@ targets:
         INFOPLIST_FILE: WQTerm/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.wqterm.app
         SWIFT_VERSION: "5.9"
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         ENABLE_BITCODE: "NO"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # Giữ nguyên Swift module cho mọi file C/ObjC-Interop
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+

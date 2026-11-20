@@ -1,22 +1,33 @@
-# This workflow will build a Swift project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-swift
+# Workflow này đã được vô hiệu hoá.
+#
+# Lý do: `swift build` không build được target iOS — Package.swift trỏ tới
+# `WQTerm/` chứa SwiftUI/UIKit (chỉ có trên SDK iOS) và các file `.c`/`.m`
+# (ios_system) mà SwiftPM không hiểu. Build thật được thực hiện bởi
+# `.github/workflows/build.yml` qua XcodeGen + xcodebuild (unsigned IPA).
+#
+# Giữ file này để lịch sử CI không báo lỗi "workflow missing"; mọi trigger
+# đã bị comment để không chạy.
 
-name: Swift
+name: Swift (disabled)
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  # push:
+  #   branches: [ "main" ]
+  # pull_request:
+  #   branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Workflow này không build được app iOS. Dùng build.yml."
+        required: false
+        default: "no"
 
 jobs:
-  build:
-
-    runs-on: macos-latest
-
+  notice:
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: swift build -v
-    - name: Run tests
-      run: swift test -v
+      - name: Explain
+        run: |
+          echo "Workflow 'swift build' bị vô hiệu hoá."
+          echo "Dùng '.github/workflows/build.yml' (XcodeGen + xcodebuild) để tạo IPA."
+

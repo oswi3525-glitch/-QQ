@@ -34,6 +34,8 @@ jobs:
 
       - name: Build archive (unsigned)
         run: |
+          set -o pipefail
+          BUILD_STATUS=0
           xcodebuild \
             -project WQTerm.xcodeproj \
             -scheme WQTerm \
@@ -45,14 +47,47 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             ONLY_ACTIVE_ARCH=NO \
-            archive
+            archive > build-log.txt 2>&1 || BUILD_STATUS=$?
+          echo "=== Errors / result ==="
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" build-log.txt | sort -u | head -80 || true
+          exit $BUILD_STATUS
+
+      - name: Show build errors
+        if: failure()
+        run: |
+          echo "=== Errors ==="
+          grep -E "error:" build-log.txt | sort -u | head -100 || echo "no 'error:' lines"
+          echo "=== Tail ==="
+          tail -60 build-log.txt || true
+
+      - name: Verify app bundle
+        run: |
+          APP=build/WQTerm.xcarchive/Products/Applications/WQTerm.app
+          test -d "$APP" || { echo "App bundle missing"; exit 1; }
+          echo "--- Bundle contents ---"
+          ls "$APP"
+          echo "--- Key checks ---"
+          test -f "$APP/Info.plist" && echo "ok: Info.plist"
+          test -f "$APP/AppIcon60x60@2x.png" && echo "ok: app icon compiled" || echo "warn: app icon not found"
+          test -f "$APP/Assets.car" && echo "ok: Assets.car"
+          /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$APP/Info.plist" >/dev/null && echo "ok: UILaunchScreen present"
+          /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$APP/Info.plist"
 
       - name: Package IPA
         run: |
           rm -rf build/Payload
           mkdir -p build/Payload
           cp -R build/WQTerm.xcarchive/Products/Applications/WQTerm.app build/Payload/
-          cd build && zip -r WQTerm.ipa Payload
+          cd build && zip -qry WQTerm.ipa Payload
+          ls -lh WQTerm.ipa
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-log.txt
+          if-no-files-found: ignore
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -70,3 +105,4 @@ jobs:
           files: build/WQTerm.ipa
           draft: false
           prerelease: false
+

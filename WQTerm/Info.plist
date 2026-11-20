@@ -44,5 +44,24 @@
     <array>
         <string>arm64</string>
     </array>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
+    <!-- Bắt buộc từ iOS 14: thiếu UILaunchScreen thì app bị chạy ở chế độ
+         tương thích (letterbox) và giao diện hiển thị sai kích thước. -->
+    <key>UILaunchScreen</key>
+    <dict/>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
 </dict>
 </plist>
