@@ -85,13 +85,13 @@ enum TerminalKey {
         guard let ascii = character.lowercased().first?.asciiValue else { return nil }
         switch ascii {
         case 0x61...0x7A:                     // a-z → 0x01-0x1A
-            return String(UnicodeScalar(ascii - 0x60)!)
+            return String(UnicodeScalar(ascii - 0x60))
         case 0x5B, 0x5C, 0x5D, 0x5E, 0x5F:    // [ \ ] ^ _
-            return String(UnicodeScalar(ascii - 0x40)!)
+            return String(UnicodeScalar(ascii - 0x40))
         case 0x3F:                            // ? → DEL
-            return String(UnicodeScalar(0x7F)!)
+            return String(UnicodeScalar(0x7F))
         case 0x40:                            // @ → NUL
-            return String(UnicodeScalar(0x00)!)
+            return String(UnicodeScalar(0x00))
         default:
             return nil
         }

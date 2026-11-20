@@ -93,9 +93,10 @@ final class AIProviderStore: ObservableObject {
 
     /// Mặt nạ để hiển thị key mà không lộ toàn bộ.
     func maskedKey(_ provider: AIProvider) -> String? {
-        guard let value = try? key(provider), let unwrapped = value, !unwrapped.isEmpty else { return nil }
-        guard unwrapped.count > 8 else { return String(repeating: "•", count: unwrapped.count) }
-        return String(unwrapped.prefix(4)) + String(repeating: "•", count: 8) + String(unwrapped.suffix(4))
+        // `try?` trên hàm trả `String?` đã flatten sẵn thành `String?`.
+        guard let value = try? key(provider), !value.isEmpty else { return nil }
+        guard value.count > 8 else { return String(repeating: "•", count: value.count) }
+        return String(value.prefix(4)) + String(repeating: "•", count: 8) + String(value.suffix(4))
     }
 
     /// Lưu API key vào Keychain.
@@ -118,7 +119,9 @@ final class AIProviderStore: ObservableObject {
     /// Biến môi trường cần truyền cho CLI.
     func environment(for provider: AIProvider) -> [String: String] {
         var environment: [String: String] = [:]
-        if let value = try? key(provider), let value, !value.isEmpty {
+
+        // Gán nil vào dictionary sẽ xoá key, nên chỉ ghi khi có giá trị thật.
+        if let value = try? key(provider), !value.isEmpty {
             environment[provider.environmentKey] = value
         }
         if !baseURL.trimmingCharacters(in: .whitespaces).isEmpty {
