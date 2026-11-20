@@ -20,6 +20,14 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Fetch embedded Python runtime (arm64)
+        run: |
+          # Module 5 yêu cầu Python 3 thật trong app. Gói 258MB không nằm trong
+          # repo nên CI tải + trích slice arm64 (~217MB) trước khi generate project.
+          set -o pipefail
+          bash scripts/fetch_runtime.sh 2>&1 | tail -20
+          du -sh WQTerm/Resources/python-runtime || true
+
       - name: Generate Xcode project
         run: xcodegen generate
 
@@ -73,6 +81,8 @@ jobs:
           test -d "$APP/toolchain" && echo "ok: toolchain frameworks" || echo "warn: toolchain missing"
           test -d "$APP/Scripts" && echo "ok: ai.py script" || echo "warn: Scripts missing"
           test -d "$APP/node-ios-arm64" && echo "ok: node runtime" || true
+          test -d "$APP/python-runtime/python3_ios.framework" && echo "ok: python runtime (CPython engine)" || echo "warn: python runtime missing"
+          test -d "$APP/python-runtime/Library/lib/python3.9" && echo "ok: python stdlib" || echo "warn: python stdlib missing"
           /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$APP/Info.plist" >/dev/null && echo "ok: UILaunchScreen present"
           /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$APP/Info.plist"
           echo "--- Bundle size ---"

@@ -43,6 +43,11 @@ WQTerm/.terminal/
 .wqterm-config.zip
 BetaFeedback/Reports/
 
+# Python runtime nhúng — CI tải bằng scripts/fetch_runtime.sh (217MB).
+# Chỉ giữ README.md làm tài liệu.
+WQTerm/Resources/python-runtime/*
+!WQTerm/Resources/python-runtime/README.md
+
 
 # Python
 __pycache__/

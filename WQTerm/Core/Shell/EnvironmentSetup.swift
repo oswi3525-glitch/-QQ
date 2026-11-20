@@ -82,6 +82,9 @@ final class EnvironmentSetup: ObservableObject {
                     self.lastError = nil
                     self.scriptPreview = script
                 }
+                // Cài runtime nhúng (Python/Node) nếu bundle có — cần trước khi
+                // PATH được dùng thật trong Terminal.
+                RuntimeManager.shared.installBundledRuntimesIfNeeded()
             } catch {
                 DispatchQueue.main.async {
                     self.isReady = false
@@ -120,8 +123,9 @@ final class EnvironmentSetup: ObservableObject {
 
     /// PATH đầy đủ của phiên hiện tại.
     var pathValue: String {
-        renderPath(prefixes: [binDirectory.path, runtimeBinPath("node-ios-arm64/bin"),
-                              runtimeBinPath("python-ios/bin")])
+        renderPath(prefixes: [binDirectory.path,
+                              RuntimeManager.shared.binDirectory(for: .node).path,
+                              RuntimeManager.shared.binDirectory(for: .python).path])
     }
 
     /// Biến môi trường để truyền cho tiến trình con khi chạy binary.
@@ -194,10 +198,8 @@ final class EnvironmentSetup: ObservableObject {
 
         // Runtime nhúng (node/python) nằm trong Documents.
         for runtime in Runtime.allCases where runtime.rawValue == name {
-            let relative = runtime == .node ? "node-ios-arm64/bin" : "python-ios/bin"
-            let path = runtimeBinPath(relative) + "/" + name
-            if fileManager.isExecutableFile(atPath: path) {
-                return ToolInfo(name: name, kind: .runtime, detail: path)
+            if let url = RuntimeManager.shared.binaryURL(for: runtime) {
+                return ToolInfo(name: name, kind: .runtime, detail: url.path)
             }
         }
         return nil
@@ -207,8 +209,8 @@ final class EnvironmentSetup: ObservableObject {
 
     /// Sinh nội dung `setup_env.sh` từ danh sách tool.
     func renderScript(tools: [ToolInfo]) -> String {
-        let runtimeNode = runtimeBinPath("node-ios-arm64/bin")
-        let runtimePython = runtimeBinPath("python-ios/bin")
+        let runtimeNode = RuntimeManager.shared.binDirectory(for: .node).path
+        let runtimePython = RuntimeManager.shared.binDirectory(for: .python).path
         let path = renderPath(prefixes: [binDirectory.path, runtimeNode, runtimePython])
 
         var lines: [String] = [

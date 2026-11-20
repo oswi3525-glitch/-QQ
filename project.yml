@@ -51,6 +51,10 @@ targets:
       - path: WQTerm/Resources/toolchain
         type: folder
         buildPhase: resources
+      # Python 3 runtime (CI điền từ scripts/fetch_runtime.sh trước khi generate).
+      - path: WQTerm/Resources/python-runtime
+        type: folder
+        buildPhase: resources
       # Node.js nhúng (NodeMobile.framework, 52MB arm64). Copy dạng folder
       # reference để bundle luôn chứa framework mà không cần link/ký — build
       # unsigned vẫn thành công, và RuntimeManager có thể load sau này.

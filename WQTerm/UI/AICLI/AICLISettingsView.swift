@@ -90,17 +90,38 @@ struct AICLISettingsView: View {
         Section {
             runtimeRow(.node, available: runtimes.availableRuntimes[.node] ?? false)
             runtimeRow(.python, available: runtimes.availableRuntimes[.python] ?? false)
+
+            if let progress = runtimes.installProgress {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(progress)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let error = runtimes.lastError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Button {
+                runtimes.installBundledRuntimesIfNeeded()
+            } label: {
+                Label("Cài lại runtime từ bundle", systemImage: "arrow.down.circle")
+            }
+            .disabled(runtimes.isInstalling)
         } header: {
             Text("Runtime nhúng")
         } footer: {
-            Text("Runtime được đọc từ Documents/.terminal/RuntimeManager/. "
-                 + "Thiếu runtime thì các CLI bằng Node sẽ không chạy được.")
+            Text("Runtime được copy từ app bundle sang Documents/.terminal/RuntimeManager/ "
+                 + "và cấp quyền thực thi. Thiếu runtime thì CLI bằng Node/Python không chạy được.")
         }
     }
 
     private func runtimeRow(_ runtime: Runtime, available: Bool) -> some View {
         HStack {
-            Text(runtime.rawValue)
+            Text(runtime.displayName)
                 .font(.body.monospaced())
             Spacer()
             Label(available ? "Sẵn sàng" : "Chưa cài",
