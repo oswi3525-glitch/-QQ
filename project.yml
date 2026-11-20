@@ -46,6 +46,11 @@ targets:
       - path: WQTerm/Resources/bin
         type: folder
         buildPhase: resources
+      # Toolchain a-Shell thật (ios_system/shell/text/files/tar/awk framework).
+      # CommandRunner dlopen các framework này lúc chạy để có lệnh Unix native.
+      - path: WQTerm/Resources/toolchain
+        type: folder
+        buildPhase: resources
       # Node.js nhúng (NodeMobile.framework, 52MB arm64). Copy dạng folder
       # reference để bundle luôn chứa framework mà không cần link/ký — build
       # unsigned vẫn thành công, và RuntimeManager có thể load sau này.

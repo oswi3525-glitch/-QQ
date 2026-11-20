@@ -100,7 +100,19 @@ struct SettingsView: View {
             NavigationLink {
                 PreviewSettingsView()
             } label: {
-                Label("Preview & renderer (M7)", systemImage: "doc.text.magnifyingglass")
+                Label("Preview & renderer (M3)", systemImage: "doc.text.magnifyingglass")
+            }
+
+            NavigationLink {
+                ToolchainView()
+            } label: {
+                Label("Toolchain & PATH (M5)", systemImage: "shippingbox")
+            }
+
+            NavigationLink {
+                BackupView()
+            } label: {
+                Label("Backup & khôi phục (M3)", systemImage: "clock.arrow.circlepath")
             }
 
             NavigationLink {
