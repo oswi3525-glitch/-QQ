@@ -20,6 +20,9 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Install cairosvg system dependencies
+        run: brew install cairo pango gdk-pixbuf libffi pkg-config
+
       - name: Install cairosvg
         run: pip install cairosvg
 
