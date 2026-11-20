@@ -70,8 +70,13 @@ jobs:
           test -f "$APP/Info.plist" && echo "ok: Info.plist"
           test -f "$APP/AppIcon60x60@2x.png" && echo "ok: app icon compiled" || echo "warn: app icon not found"
           test -f "$APP/Assets.car" && echo "ok: Assets.car"
+          test -d "$APP/toolchain" && echo "ok: toolchain frameworks" || echo "warn: toolchain missing"
+          test -d "$APP/Scripts" && echo "ok: ai.py script" || echo "warn: Scripts missing"
+          test -d "$APP/node-ios-arm64" && echo "ok: node runtime" || true
           /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$APP/Info.plist" >/dev/null && echo "ok: UILaunchScreen present"
           /usr/libexec/PlistBuddy -c "Print :MinimumOSVersion" "$APP/Info.plist"
+          echo "--- Bundle size ---"
+          du -sh "$APP"
 
       - name: Package IPA
         run: |
@@ -80,6 +85,13 @@ jobs:
           cp -R build/WQTerm.xcarchive/Products/Applications/WQTerm.app build/Payload/
           cd build && zip -qry WQTerm.ipa Payload
           ls -lh WQTerm.ipa
+          SIZE=$(stat -f%z WQTerm.ipa)
+          MB=$((SIZE / 1048576))
+          echo "### IPA size: ${MB} MB (${SIZE} bytes)" >> "$GITHUB_STEP_SUMMARY"
+          echo "IPA size: ${MB} MB"
+          if [ "$MB" -lt 50 ]; then
+            echo "::warning::IPA nhỏ hơn 50MB — kiểm tra toolchain/runtime đã nhúng."
+          fi
 
       - name: Upload build log
         if: always()
