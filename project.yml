@@ -25,7 +25,16 @@ targets:
       - path: WQTerm/UI
       - path: WQTerm/Localizable.strings
         buildPhase: resources
-      - path: WQTerm/Resources
+      - path: WQTerm/Resources/Recipes
+        type: folder
+        buildPhase: resources
+      - path: WQTerm/Resources/node_modules
+        type: folder
+        buildPhase: resources
+      - path: WQTerm/Resources/node-ios-arm64
+        type: folder
+        buildPhase: resources
+      - path: WQTerm/Resources/Assets.xcassets
         buildPhase: resources
     settings:
       base:
