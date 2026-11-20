@@ -76,7 +76,7 @@ final class SQLiteViewer {
         let database = try open(url)
         defer { sqlite3_close(database) }
 
-        let quoted = "\"" + name.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        let quoted = Self.quotedIdentifier(name)
         let sql = "SELECT * FROM \(quoted) LIMIT \(rowLimit);"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
@@ -129,7 +129,7 @@ final class SQLiteViewer {
     }
 
     private func columns(of table: String, database: OpaquePointer) throws -> [String] {
-        let sql = "PRAGMA table_info(\"\\(table.replacingOccurrences(of: "\"", with: "\"\""))\");"
+        let sql = "PRAGMA table_info(\(Self.quotedIdentifier(table)));"
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(statement) }
@@ -142,7 +142,7 @@ final class SQLiteViewer {
     }
 
     private func rowCount(of table: String, database: OpaquePointer) throws -> Int {
-        let quoted = "\"" + table.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        let quoted = Self.quotedIdentifier(table)
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM \(quoted);", -1, &statement, nil) == SQLITE_OK else {
             return 0
@@ -153,5 +153,13 @@ final class SQLiteViewer {
 
     private func errorMessage(_ database: OpaquePointer) -> String {
         sqlite3_errmsg(database).map { String(cString: $0) } ?? "lỗi không xác định"
+    }
+
+    /// Bọc tên bảng/cột trong dấu `"` và escape `"` bên trong (chuẩn SQLite).
+    ///
+    /// Tách thành hàm riêng thay vì nhúng inline — biểu thức inline trước đây bị
+    /// lỗi parse do lồng quá nhiều dấu nháy trong string interpolation.
+    static func quotedIdentifier(_ name: String) -> String {
+        "\"" + name.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }
