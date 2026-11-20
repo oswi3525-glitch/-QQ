@@ -25,17 +25,7 @@ targets:
       - path: WQTerm/UI
       - path: WQTerm/Localizable.strings
         buildPhase: resources
-      - path: WQTerm/Resources/ios_system
-        type: folder
-        buildPhase: resources
-      - path: WQTerm/Resources/node-ios-arm64
-        type: folder
-        buildPhase: resources
-      - path: WQTerm/Resources/node_modules
-        type: folder
-        buildPhase: resources
-      - path: WQTerm/Resources/Recipes
-        type: folder
+      - path: WQTerm/Resources
         buildPhase: resources
     settings:
       base:
@@ -47,3 +37,4 @@ targets:
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         ENABLE_BITCODE: "NO"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

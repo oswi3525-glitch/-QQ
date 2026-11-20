@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Nền đen -->
+  <rect width="1024" height="1024" fill="#000000"/>
+  <!-- Chữ "WQ" màu xanh lá terminal ở giữa -->
+  <text x="512" y="520" font-family="Menlo, monospace" font-size="320" font-weight="bold" fill="#00C853" text-anchor="middle" dominant-baseline="middle">WQ</text>
+  <!-- Dấu nhắc terminal &gt;_ -->
+  <text x="512" y="720" font-family="Menlo, monospace" font-size="170" fill="#00C853" text-anchor="middle" dominant-baseline="middle">&gt;_</text>
+</svg>

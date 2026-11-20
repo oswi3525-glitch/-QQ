@@ -20,6 +20,12 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Install cairosvg
+        run: pip install cairosvg
+
+      - name: Generate App Icon (SVG → PNG)
+        run: python3 scripts/generate_icon.py
+
       - name: Generate Xcode project
         run: xcodegen generate
 

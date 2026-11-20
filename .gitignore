@@ -43,3 +43,7 @@ WQTerm/.terminal/
 .wqterm-config.zip
 BetaFeedback/Reports/
 
+
+# Python
+__pycache__/
+*.pyc
