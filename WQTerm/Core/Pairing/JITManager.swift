@@ -22,7 +22,11 @@ final class JITManager: ObservableObject {
     }
 
     func refreshStatus() {
-        // Stub: kiểm tra xem StikDebug đã bật LocalDevVPN chưa.
-        status = .off
+        // Không có API đọc trạng thái JIT của StikDebug. Chỉ phản ánh điều kiện
+        // tiên quyết có thể kiểm chứng được: LocalDevVPN thực tế có đang chạy.
+        status = NetworkUtils.isLocalDevVPNActive ? .off : .unavailable
+        PairingLogger.shared.log(.info, stage: "JIT",
+                                 "Trạng thái JIT: \(status.rawValue)",
+                                 detail: NetworkUtils.currentTunnelInfo().summary)
     }
 }

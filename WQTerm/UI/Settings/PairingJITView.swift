@@ -1,26 +1,37 @@
 import SwiftUI
 import UIKit
 
-/// Pairing & JIT (M8) — iOS 27 device-initiated remote pairing.
+/// Pairing & JIT — hiển thị riêng VPN / Tunnel / Listener / Bonjour / Pairing.
 struct PairingJITView: View {
     @StateObject private var pairing = PairingManager.shared
     @StateObject private var jit = JITManager.shared
+    @ObservedObject private var tunnel = TunnelMonitor.shared
+    @ObservedObject private var logger = PairingLogger.shared
 
     @State private var message: String?
     @State private var sharePayload: SharePayload?
     @State private var showResetConfirm = false
+    @State private var showDebugLog = false
+    @State private var showConfig = false
+    @State private var configAddress = ""
+    @State private var configListenerPort = ""
+    @State private var configRelayPort = ""
+    @State private var configMessage: String?
 
     var body: some View {
         Form {
+            stateSection
+            diagnosticsSection
             vpnSection
-            statusSection
             instructionsSection
             pinSection
             pairingFileSection
             jitSection
+            supportSection
         }
         .navigationTitle("Pairing & JIT")
         .navigationBarTitleDisplayMode(.inline)
+        .padding(.bottom, 12)
         .alert("Thông báo", isPresented: Binding(
             get: { message != nil },
             set: { if !$0 { message = nil } }
@@ -43,102 +54,175 @@ struct PairingJITView: View {
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: [payload.url])
         }
-        .onAppear { pairing.recheck() }
+        .sheet(isPresented: $showDebugLog) {
+            PairingDebugLogView()
+        }
+        .sheet(isPresented: $showConfig) {
+            tunnelConfigSheet
+        }
+        .task { pairing.recheck() }
     }
 
-    // MARK: - LocalDevVPN
+    // MARK: - Trạng thái theo giai đoạn
+
+    private var stateSection: some View {
+        Section {
+            statusRow(title: "VPN",
+                      ok: pairing.tunnelReady,
+                      text: pairing.tunnelReady ? "LocalDevVPN sẵn sàng" : "Chưa có LocalDevVPN",
+                      detail: pairing.tunnelSummary)
+            statusRow(title: "Tunnel",
+                      ok: pairing.tunnelReady,
+                      text: pairing.tunnelAddressLabel,
+                      detail: "listener \(pairing.listenerPortLabel)")
+
+            statusRow(title: "Listener",
+                      ok: pairing.advertisedPort != nil,
+                      text: pairing.advertisedPort.map { "port \($0)" } ?? "chưa mở",
+                      detail: "state \(pairing.state.rawValue)")
+
+            statusRow(title: "Bonjour",
+                      ok: pairing.isAdvertising,
+                      text: pairing.isAdvertising ? "Đang quảng bá" : "Chưa quảng bá",
+                      detail: PairingManager.serviceType)
+
+            statusRow(title: "Pairing",
+                      ok: pairing.handshakeVerified,
+                      text: pairing.handshakeVerified ? "Handshake hợp lệ" : "Chưa xác thực",
+                      detail: "PIN đã nhập: \(pairing.pinConfirmed ? "có" : "chưa")")
+
+            if let status = pairing.statusMessage {
+                Text(status).font(.caption).foregroundStyle(.secondary)
+            }
+            if let error = pairing.lastError {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(error).font(.caption).foregroundStyle(.red)
+                        if let code = pairing.lastErrorCode {
+                            Text("Mã: \(code)").font(.caption2.monospaced()).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            if !PairingManager.supportsDeviceInitiatedPairing {
+                Label("Pairing trực tiếp cần iOS 27+.", systemImage: "info.circle")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Trạng thái hệ thống")
+        } footer: {
+            Text("Trạng thái thành công = xanh, đang xử lý = vàng, lỗi = đỏ. "
+                 + "Chưa có handshake thì không báo đã ghép nối.")
+                .font(.caption2)
+        }
+    }
+
+    private func statusRow(title: String, ok: Bool, text: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle().fill(ok ? Color.green : Color.orange)
+                .frame(width: 8, height: 8)
+                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title).font(.caption.bold())
+                    Text(text).font(.subheadline)
+                }
+                Text(detail)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+    }
+
+    // MARK: - Diagnostics
+
+    private var diagnosticsSection: some View {
+        Section {
+            Button {
+                Task { await pairing.runDiagnostics() }
+            } label: {
+                HStack {
+                    Label("Kiểm tra kết nối (7 bước)", systemImage: "stethoscope")
+                    Spacer()
+                    if pairing.isRunningDiagnostics {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+            }
+            .liquidGlassButton()
+            .disabled(pairing.isRunningDiagnostics)
+
+            ForEach(pairing.diagnostics) { step in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: icon(for: step.status))
+                        .foregroundStyle(color(for: step.status))
+                        .frame(width: 18)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(step.title).font(.caption.bold())
+                        Text(step.detail).font(.caption2).foregroundStyle(.secondary)
+                        if let error = step.errorText {
+                            Text(error).font(.caption2).foregroundStyle(.red)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Chẩn đoán")
+        } footer: {
+            Text("Lần lượt: VPN · địa chỉ tunnel · route · TCP listener · Bonjour · discovery · kết nối pairing.")
+                .font(.caption2)
+        }
+    }
+
+    private func icon(for status: PairingManager.DiagnosticStatus) -> String {
+        switch status {
+        case .pending: return "circle.dashed"
+        case .pass: return "checkmark.circle.fill"
+        case .fail: return "xmark.octagon.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .skipped: return "minus.circle"
+        }
+    }
+
+    private func color(for status: PairingManager.DiagnosticStatus) -> Color {
+        switch status {
+        case .pending: return .secondary
+        case .pass: return .green
+        case .fail: return .red
+        case .warning, .skipped: return .orange
+        }
+    }
+
+    // MARK: - VPN / cấu hình
 
     private var vpnSection: some View {
         Section {
-            HStack(spacing: 10) {
-                Image(systemName: pairing.isLocalDevVPNActive ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(pairing.isLocalDevVPNActive ? .green : .orange)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(pairing.isLocalDevVPNActive
-                         ? "LocalDevVPN đang bật" : PairingManager.vpnWarning)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(pairing.isLocalDevVPNActive ? .green : .orange)
-                    Text(pairing.tunnelSummary)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            if !pairing.isLocalDevVPNActive {
-                Button {
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
-                    }
-                } label: {
-                    Label("Mở Cài đặt", systemImage: "gearshape")
-                }
-                .liquidGlassButton()
+            LabeledContent("Địa chỉ tunnel", value: pairing.tunnelAddressLabel)
+            LabeledContent("Port listener", value: pairing.listenerPortLabel)
+            LabeledContent("Interface", value: tunnel.info.matchedInterfaces.isEmpty
+                           ? "—" : tunnel.info.matchedInterfaces.joined(separator: ", "))
+            Button {
+                configAddress = TunnelConfiguration.shared.tunnelAddress
+                configListenerPort = String(TunnelConfiguration.shared.listenerPort)
+                configRelayPort = String(TunnelConfiguration.shared.relayPort)
+                configMessage = nil
+                showConfig = true
+            } label: {
+                Label("Cấu hình tunnel", systemImage: "network")
             }
         } header: {
-            Text("LocalDevVPN (bắt buộc)")
+            Text("LocalDevVPN")
         } footer: {
-            Text("Pairing iOS 27 cần tunnel loopback 10.7.0.1. Chưa bật VPN thì màn hình "
-                 + "nhập mã PIN sẽ không xuất hiện sau khi nhập mật khẩu khóa máy.")
+            Text("Chỉ địa chỉ nằm trên interface tunnel mới được tính. "
+                 + "127.0.0.1 / lo0 không phải LocalDevVPN.")
                 .font(.caption2)
         }
     }
 
-    // MARK: - Status
-
-    private var statusSection: some View {
-        Section {
-            HStack {
-                Label(pairing.isPaired ? "Đã ghép nối" : "Chưa ghép nối",
-                      systemImage: pairing.isPaired ? "checkmark.seal.fill" : "exclamationmark.triangle")
-                    .foregroundStyle(pairing.isPaired ? .green : .orange)
-                Spacer()
-                if pairing.isDeviceConnected {
-                    Label("thiết bị đã kết nối", systemImage: "wifi")
-                        .font(.caption2)
-                        .foregroundStyle(.blue)
-                }
-            }
-
-            if let device = pairing.deviceName {
-                LabeledContent("Thiết bị", value: device)
-            }
-
-            if pairing.isAdvertising {
-                LabeledContent("Đang quảng bá", value: PairingManager.serviceType)
-                if let port = pairing.advertisedPort {
-                    LabeledContent("Cổng", value: String(port))
-                }
-            }
-
-            if let status = pairing.statusMessage {
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let error = pairing.lastError {
-                Label(error, systemImage: "exclamationmark.octagon.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-
-            if !PairingManager.supportsDeviceInitiatedPairing {
-                Label("Tính năng ghép nối trực tiếp cần iOS 27 trở lên. "
-                      + "Trên iOS cũ hơn, hãy dùng file pairing có sẵn.",
-                      systemImage: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            Text("Trạng thái")
-        } footer: {
-            Text("WQTerm quảng bá dịch vụ Bonjour \(PairingManager.serviceType) để iPhone "
-                 + "tự tìm thấy trong Cài đặt › Chế độ nhà phát triển › Ghép nối.")
-                .font(.caption2)
-        }
-    }
-
-    // MARK: - Instructions
+    // MARK: - Hướng dẫn
 
     private var instructionsSection: some View {
         Section {
@@ -148,29 +232,21 @@ struct PairingJITView: View {
                         .font(.caption.bold().monospacedDigit())
                         .foregroundStyle(.white)
                         .frame(width: 22, height: 22)
-                        .background(Circle().fill(index == 0 ? Color.accentColor : Color.secondary))
+                        .background(Circle().fill(Color.accentColor))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(step.title)
-                            .font(.subheadline.weight(.medium))
-                        Text(step.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Text(step.title).font(.subheadline.weight(.medium))
+                        Text(step.detail).font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 .padding(.vertical, 2)
             }
-
             Button {
                 openSystemSettings()
             } label: {
                 Label("Mở Cài đặt iPhone", systemImage: "gear")
             }
         } header: {
-            Text("Hướng dẫn từng bước")
-        } footer: {
-            Text("Developer Mode bắt buộc bật và khởi động lại thiết bị. "
-                 + "Quyền Mạng nội bộ chỉ hiện sau lần đầu WQTerm quảng bá dịch vụ.")
-                .font(.caption2)
+            Text("Hướng dẫn")
         }
     }
 
@@ -180,11 +256,9 @@ struct PairingJITView: View {
         Section {
             VStack(spacing: 8) {
                 Text(pairing.pairingCode)
-                    .font(.system(size: 44, weight: .bold, design: .monospaced))
+                    .font(.system(size: 42, weight: .bold, design: .monospaced))
                     .tracking(8)
                     .textSelection(.enabled)
-                    .accessibilityLabel("Mã PIN ghép nối \(pairing.pairingCode)")
-
                 HStack(spacing: 8) {
                     Button {
                         UIPasteboard.general.string = pairing.pairingCode
@@ -193,30 +267,23 @@ struct PairingJITView: View {
                     } label: {
                         Label("Sao chép", systemImage: "doc.on.doc")
                     }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        pairing.refreshCode()
-                    } label: {
+                    Button { pairing.refreshCode() } label: {
                         Label("Mã mới", systemImage: "arrow.clockwise")
                     }
-                    .buttonStyle(.bordered)
                 }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
 
             if pairing.isAdvertising {
-                Button(role: .destructive) {
-                    pairing.stopHost()
-                } label: {
+                Button(role: .destructive) { pairing.stopHost(reason: "Người dùng dừng") } label: {
                     Label("Dừng quảng bá", systemImage: "stop.circle")
                 }
                 .liquidGlassButton()
             } else {
                 Button {
                     if pairing.beginPairing() {
-                        message = "Đã bắt đầu ghép nối. Mã PIN cũng được gửi lên thanh thông báo."
+                        message = "Đã bắt đầu. Chờ listener sẵn sàng rồi mới quảng bá Bonjour."
                     } else {
                         message = pairing.lastError ?? PairingManager.vpnWarning
                     }
@@ -227,19 +294,19 @@ struct PairingJITView: View {
             }
 
             Button {
-                pairing.postPINNotification()
-                message = "Đã gửi mã \(pairing.pairingCode) lên thanh thông báo."
-            } label: {
-                Label("Hiện mã trên thông báo", systemImage: "bell.badge")
-            }
-
-            Button {
-                pairing.requestLocalNetworkPermission()
-                message = "Đã yêu cầu quyền Mạng nội bộ. Nếu chưa thấy prompt, "
-                    + "vào Cài đặt › WQTerm › Mạng nội bộ để bật."
+                pairing.requestLocalNetworkPermissionOnce()
+                message = "Đã yêu cầu quyền Mạng nội bộ (chỉ một lần)."
             } label: {
                 Label("Cấp quyền Mạng nội bộ", systemImage: "wifi")
             }
+
+            Button {
+                pairing.markPaired()
+                message = pairing.statusMessage
+            } label: {
+                Label("Đã nhập mã PIN", systemImage: "checkmark.circle")
+            }
+            .disabled(pairing.pinConfirmed)
 
             Button {
                 pairing.forceReset()
@@ -247,86 +314,141 @@ struct PairingJITView: View {
             } label: {
                 Label("Đặt lại luồng ghép nối", systemImage: "arrow.counterclockwise")
             }
-
-            Button {
-                pairing.markPaired()
-                message = pairing.statusMessage
-            } label: {
-                Label("Tôi đã nhập mã — hoàn tất", systemImage: "checkmark.circle")
-            }
-            .disabled(pairing.isPaired)
         } header: {
             Text("Mã PIN 6 chữ số")
         } footer: {
-            Text("Mã được sinh ngẫu nhiên mỗi phiên và hiển thị trên Dynamic Island hoặc "
-                 + "thanh thông báo. Nhập mã trong Cài đặt › Chế độ nhà phát triển › Ghép nối. "
-                 + "Không chia sẻ mã cho người khác.")
+            Text("Nút \"Đã nhập mã PIN\" chỉ ghi nhận thao tác của bạn. App chỉ báo ghép nối "
+                 + "sau khi nhận được handshake hợp lệ từ thiết bị.")
                 .font(.caption2)
         }
     }
 
-    // MARK: - Pairing file
+    // MARK: - Pairing file / JIT
 
     private var pairingFileSection: some View {
         Section {
             if let url = pairing.pairingFileURL {
-                Text(url.path)
-                    .font(.caption2.monospaced())
-                    .textSelection(.enabled)
+                LabeledContent("File", value: url.lastPathComponent)
+                Button {
+                    UIPasteboard.general.string = url.path
+                    message = "Đã sao chép đường dẫn file pairing."
+                } label: {
+                    Label("Sao chép đường dẫn", systemImage: "doc.on.doc")
+                }
             } else {
-                Text("Chưa có file pairing. Hoàn tất ghép nối để WQTerm tự lưu vào Documents/.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("Chưa có file pairing.").font(.caption).foregroundStyle(.secondary)
             }
-
             Button {
                 exportPairing()
             } label: {
                 Label("Xuất file mobiledevicepairing", systemImage: "square.and.arrow.up")
             }
-
             if pairing.isPaired {
-                Button(role: .destructive) {
-                    showResetConfirm = true
-                } label: {
+                Button(role: .destructive) { showResetConfirm = true } label: {
                     Label("Đặt lại trạng thái ghép nối", systemImage: "arrow.counterclockwise")
                 }
             }
         } header: {
             Text("Pairing file")
         } footer: {
-            Text("File được lưu tại Documents/mobiledevicepairing và bản sao "
-                 + "Documents/WQTerm.mobiledevicepairing (quyền 0600). Dùng cho JIT / SideStore.")
+            Text("File tạo cục bộ (chưa có handshake) chỉ dùng để kiểm tra — không coi là đã ghép nối.")
                 .font(.caption2)
         }
     }
 
-    // MARK: - JIT
-
     private var jitSection: some View {
         Section {
             LabeledContent("Trạng thái JIT", value: jit.status.rawValue)
-
-            Button {
-                jit.refreshStatus()
-                message = "Đã làm mới trạng thái JIT: \(jit.status.rawValue)"
-            } label: {
+            Button { jit.refreshStatus() } label: {
                 Label("Kiểm tra lại JIT", systemImage: "arrow.clockwise")
             }
-
-            Button {
-                openStikDebug()
-            } label: {
+            Button { openStikDebug() } label: {
                 Label("Bật JIT bằng StikDebug", systemImage: "bolt.fill")
             }
             .disabled(jit.enableJITURL() == nil)
         } header: {
             Text("JIT (StikDebug)")
+        }
+    }
+
+    private var supportSection: some View {
+        Section {
+            Button {
+                showDebugLog = true
+            } label: {
+                Label("Xem debug log pairing (\(logger.entries.count))", systemImage: "doc.text.magnifyingglass")
+            }
+        } header: {
+            Text("Hỗ trợ")
         } footer: {
-            Text("JIT không bắt buộc — mọi tính năng cơ bản chạy được khi không có JIT. "
-                 + "Cần get-task-allow = true trong entitlements.")
+            Text("Log giai đoạn được lưu riêng tại Documents/.terminal/pairing-debug.log.")
                 .font(.caption2)
         }
+    }
+
+    // MARK: - Tunnel config sheet
+
+    private var tunnelConfigSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("10.7.0.1", text: $configAddress)
+                        .keyboardType(.numbersAndPunctuation)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("0 (tự động)", text: $configListenerPort)
+                        .keyboardType(.numberPad)
+                    TextField("8080", text: $configRelayPort)
+                        .keyboardType(.numberPad)
+                } header: {
+                    Text("Thông số tunnel")
+                } footer: {
+                    Text("Giá trị này là nguồn cấu hình duy nhất cho listener, relay và pairing. "
+                         + "Đổi xong nên bật lại Pairing Host.")
+                        .font(.caption2)
+                }
+                if let configMessage {
+                    Text(configMessage).font(.caption).foregroundStyle(.orange)
+                }
+                Section {
+                    Button {
+                        saveConfig()
+                    } label: {
+                        Label("Lưu cấu hình", systemImage: "checkmark.circle")
+                    }
+                    .liquidGlassButton()
+                    Button("Đặt lại mặc định") {
+                        TunnelConfiguration.shared.resetToDefaults()
+                        configAddress = TunnelConfiguration.shared.tunnelAddress
+                        configListenerPort = String(TunnelConfiguration.shared.listenerPort)
+                        configRelayPort = String(TunnelConfiguration.shared.relayPort)
+                        configMessage = "Đã đặt lại về giá trị mặc định."
+                    }
+                }
+            }
+            .navigationTitle("Cấu hình tunnel")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Xong") { showConfig = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func saveConfig() {
+        let listener = UInt16(configListenerPort.trimmingCharacters(in: .whitespaces)) ?? 0
+        let relay = UInt16(configRelayPort.trimmingCharacters(in: .whitespaces))
+            ?? TunnelConfiguration.defaultRelayPort
+        if let error = TunnelConfiguration.shared.update(address: configAddress,
+                                                         listenerPort: listener,
+                                                         relayPort: relay) {
+            configMessage = error
+            return
+        }
+        configMessage = "Đã lưu. \(TunnelConfiguration.shared.summary)"
+        pairing.stopHost(reason: "Đổi cấu hình tunnel")
     }
 
     // MARK: - Actions
@@ -350,7 +472,7 @@ struct PairingJITView: View {
             return
         }
         UIApplication.shared.open(url) { success in
-            if !success { message = "Không mở được StikDebug. Kiểm tra đã cài app chưa." }
+            if !success { message = "Không mở được StikDebug." }
         }
     }
 }

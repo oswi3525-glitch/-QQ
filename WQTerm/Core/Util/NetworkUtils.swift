@@ -1,72 +1,137 @@
 import Foundation
+import Network
+import Combine
 #if canImport(Darwin)
 import Darwin
 #elseif canImport(Glibc)
 import Glibc
 #endif
 
-/// Kiểm tra trạng thái của LocalDevVPN — điều kiện bắt buộc của pairing iOS 27.
+/// Kiểm tra chính xác trạng thái tunnel LocalDevVPN.
 ///
-/// LocalDevVPN tạo một tunnel loopback (`utun*`) với địa chỉ `10.7.0.1`
-/// (hoặc `127.0.0.1` trên một số bản). Không có tunnel này thì service
-/// Bonjour của WQTerm không thấy thiết bị và màn hình PIN bị treo sau khi
-/// người dùng nhập mật khẩu khóa máy.
+/// QUAN TRỌNG: `lo0 / 127.0.0.1` luôn tồn tại trên mọi iPhone và KHÔNG phải là
+/// LocalDevVPN. Tương tự, `utun0..utunN` / `ipsec*` cũng có thể là tunnel hệ
+/// thống. Vì vậy địa chỉ mong đợi phải nằm TRÊN CHÍNH interface tunnel thì mới
+/// được coi là "VPN sẵn sàng". Không bao giờ đánh đồng 127.0.0.1 với 10.7.0.1.
 enum NetworkUtils {
-    /// Địa chỉ loopback mà LocalDevVPN gán cho tunnel.
-    static let localDevVPNAddress = "10.7.0.1"
-    static let fallbackLoopbackAddress = "127.0.0.1"
+    struct InterfaceAddress {
+        let interface: String
+        let address: String
+    }
 
     struct TunnelInfo {
-        let interfaceNames: [String]
-        let addresses: [String]
+        /// Địa chỉ cấu hình (nguồn: TunnelConfiguration, không hardcode ở đây).
+        let expectedAddress: String
+        /// Interface thực sự mang địa chỉ mong đợi.
+        let matchedInterfaces: [String]
+        /// Mọi địa chỉ IPv4 tìm thấy trên interface dạng tunnel.
+        let tunnelAddresses: [InterfaceAddress]
+        /// Địa chỉ mong đợi có tồn tại nhưng nằm ngoài tunnel (ví dụ trên lo0).
+        let addressFoundOutsideTunnel: Bool
 
-        var isActive: Bool { !interfaceNames.isEmpty || !addresses.isEmpty }
+        var hasExpectedAddress: Bool { !matchedInterfaces.isEmpty }
+
+        /// Chỉ `true` khi địa chỉ cấu hình nằm trên interface tunnel thực tế.
+        var isReady: Bool { hasExpectedAddress }
 
         var summary: String {
-            if interfaceNames.isEmpty, addresses.isEmpty {
-                return "Không phát hiện tunnel LocalDevVPN"
+            guard isReady else {
+                return addressFoundOutsideTunnel
+                    ? "\(expectedAddress) có trên interface thường, không phải tunnel"
+                    : "Chưa thấy \(expectedAddress) trên tunnel"
             }
-            let iface = interfaceNames.isEmpty ? "—" : interfaceNames.joined(separator: ", ")
-            let addr = addresses.isEmpty ? "—" : addresses.joined(separator: ", ")
-            return "Tunnel \(iface) — \(addr)"
+            return "\(expectedAddress) @ \(matchedInterfaces.joined(separator: ", "))"
+        }
+
+        var detail: String {
+            let interfaces = tunnelAddresses.isEmpty
+                ? "không có interface tunnel IPv4"
+                : tunnelAddresses.map { "\($0.interface)=\($0.address)" }.joined(separator: ", ")
+            return "\(summary) | \(interfaces)"
         }
     }
 
-    /// `true` khi có interface `utun*` HOẶC địa chỉ `10.7.0.1`/`127.0.0.1` tồn tại.
-    static var isLocalDevVPNActive: Bool { currentTunnelInfo().isActive }
+    /// `true` khi LocalDevVPN thực sự sẵn sàng (địa chỉ cấu hình nằm trên tunnel).
+    static var isLocalDevVPNActive: Bool { currentTunnelInfo().isReady }
 
-    /// Thông tin chi tiết để hiển thị trên UI.
     static func currentTunnelInfo() -> TunnelInfo {
-        var names: [String] = []
-        var addresses: [String] = []
+        let expected = TunnelConfiguration.shared.tunnelAddress
+        var matched: [String] = []
+        var tunnelAddresses: [InterfaceAddress] = []
+        var foundOutside = false
 
         var interfaces: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&interfaces) == 0, let first = interfaces else {
-            return TunnelInfo(interfaceNames: [], addresses: [])
+            return TunnelInfo(expectedAddress: expected,
+                              matchedInterfaces: [],
+                              tunnelAddresses: [],
+                              addressFoundOutsideTunnel: false)
         }
         defer { freeifaddrs(interfaces) }
 
         var cursor: UnsafeMutablePointer<ifaddrs>? = first
         while let current = cursor {
-            if let rawName = current.pointee.ifa_name {
-                let name = String(cString: rawName)
-                if name.hasPrefix("utun") || name.hasPrefix("ppp") || name.hasPrefix("ipsec") {
-                    names.append(name)
-                }
-            }
+            let name = current.pointee.ifa_name.map { String(cString: $0) } ?? ""
+            let isTunnelInterface = name.hasPrefix("utun") || name.hasPrefix("ppp")
+                || name.hasPrefix("ipsec")
 
-            if let rawAddress = current.pointee.ifa_addr {
-                if let address = numericAddress(rawAddress.pointee) {
-                    if address == localDevVPNAddress || address == fallbackLoopbackAddress {
-                        addresses.append(address)
+            if let rawAddress = current.pointee.ifa_addr,
+               let address = numericAddress(rawAddress.pointee) {
+                if isTunnelInterface {
+                    tunnelAddresses.append(InterfaceAddress(interface: name, address: address))
+                }
+                if address == expected {
+                    if isTunnelInterface {
+                        matched.append(name)
+                    } else {
+                        foundOutside = true
                     }
                 }
             }
             cursor = current.pointee.ifa_next
         }
 
-        return TunnelInfo(interfaceNames: Array(Set(names)).sorted(),
-                          addresses: Array(Set(addresses)).sorted())
+        return TunnelInfo(expectedAddress: expected,
+                          matchedInterfaces: Array(Set(matched)).sorted(),
+                          tunnelAddresses: tunnelAddresses,
+                          addressFoundOutsideTunnel: foundOutside)
+    }
+
+    /// Kiểm tra route/traffic tới địa chỉ tunnel bằng TCP connect có timeout.
+    /// Không phải là bằng chứng handshake pairing, chỉ là kiểm tra mạng.
+    static func canReachTunnel(port: UInt16? = nil,
+                               timeout: TimeInterval = 1.5) async -> Bool {
+        let host = TunnelConfiguration.shared.tunnelAddress
+        let targetPort = port ?? TunnelConfiguration.shared.relayPort
+        return await canReach(host: host, port: targetPort, timeout: timeout)
+    }
+
+    static func canReach(host: String, port: UInt16, timeout: TimeInterval) async -> Bool {
+        guard let endpointPort = NWEndpoint.Port(rawValue: port), !host.isEmpty else { return false }
+        let connection = NWConnection(host: NWEndpoint.Host(host),
+                                      port: endpointPort,
+                                      using: .tcp)
+        return await withCheckedContinuation { continuation in
+            let lock = NSLock()
+            var finished = false
+            let finish: (Bool) -> Void = { result in
+                lock.lock()
+                guard !finished else { lock.unlock(); return }
+                finished = true
+                lock.unlock()
+                connection.cancel()
+                continuation.resume(returning: result)
+            }
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready: finish(true)
+                case .failed, .cancelled: finish(false)
+                default: break
+                }
+            }
+            connection.start(queue: DispatchQueue(label: "com.wqterm.tunnel.probe"))
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { finish(false) }
+        }
     }
 
     /// Chuyển `sockaddr` sang chuỗi số (không phụ thuộc `sa_len` của Darwin).
@@ -89,4 +154,51 @@ enum NetworkUtils {
         guard status == 0 else { return nil }
         return String(cString: host)
     }
+}
+
+/// Theo dõi tunnel liên tục để UI không báo "VPN đang bật" khi tunnel đã mất.
+final class TunnelMonitor: ObservableObject {
+    static let shared = TunnelMonitor()
+
+    @Published private(set) var info: NetworkUtils.TunnelInfo
+    @Published private(set) var lastChangeDate: Date = Date()
+
+    private var timer: Timer?
+    private var running = false
+
+    private init() {
+        info = NetworkUtils.currentTunnelInfo()
+    }
+
+    var isReady: Bool { info.isReady }
+
+    func start() {
+        guard !running else { return }
+        running = true
+        refresh()
+        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            self?.refresh()
+        }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        running = false
+    }
+
+    func refresh() {
+        let newInfo = NetworkUtils.currentTunnelInfo()
+        let changed = newInfo.matchedInterfaces != info.matchedInterfaces
+            || newInfo.addressFoundOutsideTunnel != info.addressFoundOutsideTunnel
+        info = newInfo
+        if changed {
+            lastChangeDate = Date()
+            NotificationCenter.default.post(name: .wqTunnelDidChange, object: nil)
+        }
+    }
+}
+
+extension Notification.Name {
+    static let wqTunnelDidChange = Notification.Name("WQTerm.Tunnel.DidChange")
 }

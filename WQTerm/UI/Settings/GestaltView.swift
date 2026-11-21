@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Màn hình MobileGestalt (tính năng mới).
 ///
@@ -9,6 +10,7 @@ struct GestaltView: View {
     @StateObject private var safeMode = SafeMode.shared
 
     @State private var cachePath: String?
+    @State private var accessReport: GestaltManager.AccessReport?
     @State private var presetStates: [GestaltManager.Preset: Bool] = [:]
     @State private var parameters: [GestaltParameter] = []
     @State private var filter = ""
@@ -22,7 +24,8 @@ struct GestaltView: View {
     @State private var pendingPreset: (preset: GestaltManager.Preset, enabled: Bool)?
 
     private var isWriteAllowed: Bool {
-        compatibility.canWriteGestalt && !safeMode.isEnabled && cachePath != nil
+        compatibility.canWriteGestalt && !safeMode.isEnabled
+            && cachePath != nil && accessReport?.writable == true
     }
 
     private var filtered: [GestaltParameter] {
@@ -114,17 +117,30 @@ struct GestaltView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if let report = accessReport {
+                HStack(spacing: 8) {
+                    Image(systemName: report.writable ? "checkmark.circle.fill"
+                          : report.readOK ? "exclamationmark.triangle.fill" : "xmark.octagon.fill")
+                    Text("Quyền truy cập: \(report.summary)")
+                }
+                .font(.caption)
+                .foregroundStyle(report.writable ? .green : report.readOK ? .orange : .red)
+            }
+
             if let path = cachePath {
-                Text(path)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.tertiary)
-                    .textSelection(.enabled)
+                Button {
+                    UIPasteboard.general.string = path
+                } label: {
+                    Label("Sao chép đường dẫn cache", systemImage: "doc.on.doc")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
             }
         } header: {
             Text("Trạng thái")
         } footer: {
-            Text("Gestalt chỉ chạy trên iOS 26.0 – 27.2.1. Từ iOS 27.3 Beta 2 Apple đã vá "
-                 + "worse_query nên tính năng bị vô hiệu hoá hoàn toàn.")
+            Text("Đọc được file KHÔNG có nghĩa là ghi được. Ứng dụng probe quyền ghi thực tế "
+                 + "trước mỗi lần ghi; nếu kernel từ chối, dữ liệu gốc được giữ nguyên.")
                 .font(.caption2)
         }
     }
@@ -297,6 +313,7 @@ struct GestaltView: View {
             return
         }
         cachePath = url.path
+        accessReport = manager.accessReport()
         presetStates = manager.presetStates()
         do {
             parameters = try manager.readableParameters()
@@ -305,25 +322,37 @@ struct GestaltView: View {
         }
     }
 
-    /// Gọi preset manager — snapshot bắt buộc nằm trong `GestaltManager.apply`.
+    /// Chỉ báo thành công sau khi `verified == true` (đã đọc lại so sánh).
     private func apply(preset: GestaltManager.Preset, enabled: Bool) {
         do {
-            let snapshot = try GestaltManager.shared.apply(preset: preset, enabled: enabled)
-            statusMessage = "Đã \(enabled ? "bật" : "tắt") \(preset.title).\nSnapshot: "
-                + URL(fileURLWithPath: snapshot.originalPath).lastPathComponent
+            let outcome = try GestaltManager.shared.apply(preset: preset, enabled: enabled)
+            guard outcome.verified else {
+                errorMessage = "Ghi xong nhưng không xác minh được — không báo thành công."
+                return
+            }
+            statusMessage = "Đã \(enabled ? "bật" : "tắt") \(preset.title) và xác minh bằng đọc lại.\n"
+                + "Khoá: \(outcome.changedKeys.prefix(3).joined(separator: ", "))"
+            reload()
+        } catch let error as GestaltError {
+            errorMessage = "[\(error.category)] \(error.localizedDescription)"
             reload()
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    /// Ghi tuân thủ: snapshot bắt buộc → atomic rename (bên trong GestaltManager).
     private func commitWrite() {
         do {
-            let snapshot = try GestaltManager.shared.write(key: editingKey, value: editingValue)
+            let outcome = try GestaltManager.shared.write(key: editingKey, value: editingValue)
+            guard outcome.verified else {
+                errorMessage = "Ghi xong nhưng không xác minh được — không báo thành công."
+                return
+            }
             showingWrite = false
-            statusMessage = "Đã ghi \(editingKey).\nSnapshot: "
-                + URL(fileURLWithPath: snapshot.originalPath).lastPathComponent
+            statusMessage = "Đã ghi \(editingKey) và xác minh bằng đọc lại."
+            reload()
+        } catch let error as GestaltError {
+            errorMessage = "[\(error.category)] \(error.localizedDescription)"
             reload()
         } catch {
             errorMessage = error.localizedDescription
@@ -335,6 +364,8 @@ struct GestaltView: View {
             try GestaltManager.shared.restoreLastSnapshot()
             statusMessage = "Đã khôi phục từ snapshot gần nhất."
             reload()
+        } catch let error as GestaltError {
+            errorMessage = "[\(error.category)] \(error.localizedDescription)"
         } catch {
             errorMessage = error.localizedDescription
         }

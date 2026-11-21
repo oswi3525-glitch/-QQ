@@ -1,6 +1,13 @@
 # WQTerm — CHANGELOG
 
-## [Unreleased] — Đại tu iOS 27
+## [Unreleased] — Reliability overhaul
+- MobileGestalt: sửa triệt để lỗi `errno 1` (EPERM). Phân biệt read/write/permission/verification/rollback; probe quyền ghi trước khi backup; file tạm chỉ tạo sau preflight; fsync/close kiểm tra; đọc lại so sánh sau ghi; rollback tự động; xoá snapshot rác; không báo thành công giả.
+- WorseQuery: thay signature private API sai (1 tham số) bằng `SandboxAccess.grantReadWrite` (3 tham số đúng), không báo mount thành công khi không có extension.
+- Pairing: state machine STOPPED→…→COMPLETED, listener/service chỉ quảng bá sau `.ready`, generation token chặn callback cũ, retry có giới hạn, timeout handshake, một NWBrowser duy nhất, chặn `DefunctConnection`; thêm 7 bước chẩn đoán + debug log riêng.
+- Tunnel: `TunnelConfiguration` là nguồn duy nhất cho IP/port; `NetworkUtils` không còn đếm `lo0/127.0.0.1` hay `utun*` không có địa chỉ; `TunnelMonitor` cập nhật liên tục và dừng host khi tunnel mất.
+- UI: trạng thái VPN/Tunnel/Listener/Bonjour/Pairing riêng biệt, màu xanh/vàng/đỏ, bỏ đường dẫn hệ thống dài khỏi màn hình chính.
+
+## [1.0.1] — Đại tu iOS 27
 - Pairing: thêm `NetworkUtils` kiểm tra LocalDevVPN (utun / 10.7.0.1), cảnh báo khi chưa bật, luồng `beginPairing()` không treo sau mật khẩu khóa máy, đẩy mã PIN lên thông báo, onboarding 3 bước.
 - UI: component Liquid Glass dùng chung, áp dụng cho nút chính/tab; tương phản Dark Mode.
 - Sandbox: mở rộng đường dẫn quét bundle/data container, fallback worse_query qua App Group, lọc tên hiển thị, thêm nút Respring & Dọn Cache.

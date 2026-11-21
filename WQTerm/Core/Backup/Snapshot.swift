@@ -97,9 +97,16 @@ final class SnapshotManager {
                                 createdAt: Date(),
                                 byteCount: byteCount)
 
-        // Ghi metadata để Restore biết file gốc nằm ở đâu.
-        writeManifest(for: snapshot)
-        enforceQuota()
+    // Ghi metadata để Restore biết file gốc nằm ở đâu. Nếu không ghi được
+    // manifest thì snapshot này vô dụng → xoá luôn, không để backup rác.
+    do {
+        try writeManifest(for: snapshot)
+    } catch {
+        discard(snapshot)
+        throw SnapshotError.copyFailed(path: url.path,
+                                       underlying: "Không ghi được manifest: \(error.localizedDescription)")
+    }
+    enforceQuota()
         AuditLogger.shared.log(event: .writeAheadSnapshot(command: "createSnapshot", target: url.path))
         return snapshot
     }
@@ -185,6 +192,17 @@ final class SnapshotManager {
         }
     }
 
+    /// Xoá hoàn toàn một snapshot (kể cả manifest) khi thao tác ghi thất bại,
+    /// để không để lại backup rác cho một lần ghi không bao giờ xảy ra.
+    func discard(_ snapshot: Snapshot) {
+        let directory = snapshot.snapshotURL.deletingLastPathComponent()
+        try? fm.removeItem(at: snapshot.snapshotURL)
+        try? fm.removeItem(at: directory.appendingPathComponent(".manifest.json"))
+        if let remaining = try? fm.contentsOfDirectory(atPath: directory.path), remaining.isEmpty {
+            try? fm.removeItem(at: directory)
+        }
+    }
+
     // MARK: - Private
 
     private func makeSnapshotDirectory() throws -> URL {
@@ -198,13 +216,12 @@ final class SnapshotManager {
         return directory
     }
 
-    private func writeManifest(for snapshot: Snapshot) {
+    private func writeManifest(for snapshot: Snapshot) throws {
         let directory = snapshot.snapshotURL.deletingLastPathComponent()
         let manifestURL = directory.appendingPathComponent(".manifest.json", isDirectory: false)
         let payload: [String: String] = [snapshot.snapshotURL.lastPathComponent: snapshot.originalPath]
-        if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted]) {
-            try? data.write(to: manifestURL, options: .atomic)
-        }
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
+        try data.write(to: manifestURL, options: .atomic)
     }
 
     private func readManifest(in directory: URL) -> [String: String] {

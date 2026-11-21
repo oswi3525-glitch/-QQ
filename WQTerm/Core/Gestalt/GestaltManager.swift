@@ -175,11 +175,57 @@ final class GestaltManager {
 
     // MARK: - Read
 
-    /// Đọc toàn bộ plist dưới dạng dictionary (chỉ các giá trị scalar).
+    /// Báo cáo khả năng truy cập — dùng cho UI chẩn đoán, KHÔNG được suy ra
+    /// rằng "đọc được" thì "ghi được".
+    struct AccessReport {
+        let cacheFound: Bool
+        let readOK: Bool
+        let writable: Bool
+        let writeErrorCode: Int32?
+        let hasSystemGroupEntitlement: Bool
+
+        var summary: String {
+            if !cacheFound { return "Không tìm thấy file cache" }
+            if !readOK { return "Đọc thất bại" }
+            if writable { return "Đọc/ghi OK" }
+            return hasSystemGroupEntitlement
+                ? "Chỉ có quyền đọc — kernel từ chối ghi (errno \(writeErrorCode.map(String.init) ?? "?"))"
+                : "Chỉ có quyền đọc — thiếu entitlement systemgroup (errno \(writeErrorCode.map(String.init) ?? "?"))"
+        }
+    }
+
+    /// Kiểm tra thực tế: đọc thử + probe tạo file tạm trong thư mục cache.
+    func accessReport() -> AccessReport {
+        guard let url = locateCacheFile() else {
+            return AccessReport(cacheFound: false, readOK: false, writable: false,
+                                writeErrorCode: nil, hasSystemGroupEntitlement: false)
+        }
+        let readable = (try? read()) != nil
+        let directory = url.resolvingSymlinksInPath().deletingLastPathComponent()
+        let code = AtomicFileWriter.writabilityError(in: directory)
+        let hasGroup = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "systemgroup.com.apple.mobilegestaltcache"
+        ) != nil
+        return AccessReport(cacheFound: true, readOK: readable, writable: code == nil,
+                            writeErrorCode: code, hasSystemGroupEntitlement: hasGroup)
+    }
+
+    /// Đọc toàn bộ plist dưới dạng dictionary. Lỗi I/O và lỗi định dạng được
+    /// phân biệt rõ ràng để UI không gộp chung thành "Không thể đọc Gestalt".
     func read() throws -> [String: Any] {
         let url = try requireCacheFile()
-        let data = try Data(contentsOf: url)
-        let object = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw GestaltError.readFailed(reason: error.localizedDescription)
+        }
+        let object: Any
+        do {
+            object = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        } catch {
+            throw GestaltError.invalidFormat(path: url.path)
+        }
         guard let dictionary = object as? [String: Any] else {
             throw GestaltError.invalidFormat(path: url.path)
         }
@@ -229,62 +275,54 @@ final class GestaltManager {
         return states
     }
 
-    /// Áp dụng một preset (bật hoặc tắt).
-    ///
-    /// **Bắt buộc**: `SnapshotEngine.createSnapshot()` được gọi TRƯỚC khi sửa plist.
-    /// Nếu backup thất bại → ném `GestaltError.snapshotFailed` → không ghi gì cả.
+    /// Áp dụng một preset (bật hoặc tắt) qua cùng pipeline an toàn.
     @discardableResult
-    func apply(preset: Preset, enabled: Bool) throws -> SnapshotManager.Snapshot {
-        guard compatibility.canWriteGestalt else {
-            let reason = compatibility.gestaltBlockReason ?? "Không hỗ trợ trên phiên bản iOS này."
-            AuditLogger.shared.log(event: .gestaltWriteBlocked(reason: reason))
-            throw GestaltError.disabled(reason: reason)
-        }
-
-        let url = try requireCacheFile()
-        let snapshot = try SnapshotEngine.createSnapshot()
+    func apply(preset: Preset, enabled: Bool) throws -> GestaltWriteOutcome {
         let values = enabled ? preset.enabledValues : preset.disabledValues
-
-        var dictionary = try read()
-        for (key, value) in values { dictionary[key] = value }
-        let updated = try PropertyListSerialization.data(fromPropertyList: dictionary,
-                                                         format: .binary, options: 0)
-        do {
-            try AtomicFileWriter.write(updated, to: url)
-        } catch {
-            throw GestaltError.writeFailed(reason: error.localizedDescription)
-        }
-
-        lastSnapshot = snapshot
-        AuditLogger.shared.log(event: .gestaltWrite(key: preset.rawValue))
-        return snapshot
+        return try performWrite(values, label: preset.rawValue)
     }
 
-    // MARK: - Write (snapshot → atomic rename)
+    // MARK: - Safe write pipeline
 
     /// Ghi một tham số vào MobileGestalt cache.
     ///
-    /// Luồng bắt buộc:
-    /// 1. Kiểm tra compatibility — 27.3 Beta 2 trở đi thì ném `GestaltError.disabled`.
-    /// 2. `SnapshotEngine.createSnapshot(for:)` — **thất bại thì dừng, không ghi**.
-    /// 3. Ghi ra file tạm cùng thư mục → `fsync` → `rename()`.
-    ///
-    /// - Returns: Snapshot vừa tạo (để UI hiển thị đường dẫn khôi phục).
+    /// Pipeline: gate → preflight quyền → snapshot → đọc → sửa → ghi đã xác minh
+    /// → đọc lại so sánh → rollback nếu sai → dọn snapshot rác nếu không đổi gì.
     @discardableResult
-    func write(key: String, value: String) throws -> SnapshotManager.Snapshot {
-        // 1. Compatibility gate.
+    func write(key: String, value: String) throws -> GestaltWriteOutcome {
+        let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { throw GestaltError.emptyKey }
+        guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw GestaltError.invalidValue(reason: "Giá trị không được để trống.")
+        }
+        guard trimmedKey.utf8.count <= 512, value.utf8.count <= 4096 else {
+            throw GestaltError.invalidValue(reason: "Khoá hoặc giá trị quá dài.")
+        }
+        return try performWrite([trimmedKey: value], label: trimmedKey)
+    }
+
+    /// Trái tim của luồng ghi an toàn. Mọi lỗi đều có nhánh xử lý riêng.
+    private func performWrite(_ changes: [String: String], label: String) throws -> GestaltWriteOutcome {
+        // 1. Compatibility gate (chính sách, không phải quyền truy cập).
         guard compatibility.canWriteGestalt else {
             let reason = compatibility.gestaltBlockReason ?? "Không hỗ trợ trên phiên bản iOS này."
             AuditLogger.shared.log(event: .gestaltWriteBlocked(reason: reason))
             throw GestaltError.disabled(reason: reason)
         }
-        guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw GestaltError.emptyKey
-        }
 
         let url = try requireCacheFile()
 
-        // 2. Write-ahead snapshot — BẮT BUỘC, thất bại thì huỷ lệnh ghi.
+        // 2. Preflight QUYỀN GHI trước khi tạo bất kỳ backup nào.
+        //    Đọc được file KHÔNG có nghĩa là ghi được (đây là nguyên nhân errno 1).
+        let directory = url.resolvingSymlinksInPath().deletingLastPathComponent()
+        if let code = AtomicFileWriter.writabilityError(in: directory) {
+            let reason = "errno \(code) — kernel từ chối tạo file tạm tại thư mục cache. "
+                + "Thiết bị này chỉ cho phép đọc MobileGestalt; dữ liệu gốc được giữ nguyên."
+            AuditLogger.shared.log(event: .gestaltWriteBlocked(reason: "permission \(code)"))
+            throw GestaltError.notWritable(reason: reason)
+        }
+
+        // 3. Backup write-ahead (bắt buộc).
         let snapshot: SnapshotManager.Snapshot
         do {
             snapshot = try SnapshotEngine.createSnapshot()
@@ -293,29 +331,102 @@ final class GestaltManager {
             throw GestaltError.snapshotFailed(reason: error.localizedDescription)
         }
 
-        // 3. Sửa plist trong bộ nhớ rồi ghi nguyên tử.
-        var dictionary = try read()
-        dictionary[key] = value
-        let updated = try PropertyListSerialization.data(fromPropertyList: dictionary,
-                                                        format: .binary,
-                                                        options: 0)
+        // Snapshot chỉ được giữ lại khi ghi thành công. Mọi lỗi trước đó xoá nó.
+        var keepSnapshot = false
+        defer {
+            if !keepSnapshot { SnapshotManager.shared.discard(snapshot) }
+        }
+
+        // 4. Đọc nội dung gốc (đã xử lý lỗi đọc trong read()).
+        let original = try read()
+        var updated = original
+        for (key, value) in changes { updated[key] = value }
+
+        let data: Data
         do {
-            try AtomicFileWriter.write(updated, to: url)
+            data = try PropertyListSerialization.data(fromPropertyList: updated,
+                                                      format: .binary, options: 0)
+        } catch {
+            throw GestaltError.invalidValue(reason: error.localizedDescription)
+        }
+
+        // 5. Ghi an toàn + xác minh nội dung trong AtomicFileWriter.
+        do {
+            try AtomicFileWriter.write(data, to: url)
+        } catch let writeError as AtomicFileWriter.WriteError {
+            switch writeError.category {
+            case .permission:
+                throw GestaltError.notWritable(reason: writeError.localizedDescription)
+            case .verification:
+                throw GestaltError.verificationFailed(reason: writeError.localizedDescription)
+            case .io:
+                throw GestaltError.writeFailed(reason: writeError.localizedDescription)
+            }
         } catch {
             throw GestaltError.writeFailed(reason: error.localizedDescription)
         }
 
+        // 6. Đọc lại để xác nhận từng khoá thay đổi đúng giá trị.
+        var mismatch: String?
+        do {
+            let after = try read()
+            mismatch = changes.first { key, expected in
+                Self.describe(after[key]) != expected
+            }?.key
+        } catch {
+            mismatch = "toàn bộ file (đọc lại thất bại: \(error.localizedDescription))"
+        }
+
+        if let mismatch {
+            // 7. Rollback tự động về bản gốc.
+            do {
+                let backup = try Data(contentsOf: snapshot.snapshotURL)
+                try AtomicFileWriter.write(backup, to: url)
+                let restored = try read()
+                guard restored.count == original.count else {
+                    throw GestaltError.verificationFailed(reason: "rollback không khớp số khoá")
+                }
+                for (key, expected) in original where Self.describe(restored[key]) != Self.describe(expected) {
+                    throw GestaltError.verificationFailed(reason: "rollback sai khoá \(key)")
+                }
+            } catch {
+                // Giữ snapshot lại để người dùng còn đường khôi phục thủ công.
+                keepSnapshot = true
+                lastSnapshot = snapshot
+                throw GestaltError.rollbackFailed(reason: "\(error.localizedDescription). "
+                    + "Snapshot vẫn được giữ lại để khôi phục thủ công.")
+            }
+            throw GestaltError.verificationFailed(reason: "khoá \(mismatch) không đúng sau khi ghi; "
+                + "đã tự động khôi phục dữ liệu gốc.")
+        }
+
+        keepSnapshot = true
         lastSnapshot = snapshot
-        AuditLogger.shared.log(event: .gestaltWrite(key: key))
-        return snapshot
+        AuditLogger.shared.log(event: .gestaltWrite(key: label))
+        return GestaltWriteOutcome(snapshot: snapshot,
+                                   verified: true,
+                                   changedKeys: Array(changes.keys).sorted())
     }
 
-    /// Khôi phục lại file Gestalt từ snapshot đã tạo trước lần ghi gần nhất.
+    /// Khôi phục từ snapshot gần nhất. Dùng chung pipeline ghi đã xác minh.
     func restoreLastSnapshot() throws {
         guard let snapshot = lastSnapshot else { throw GestaltError.noSnapshot }
         let destination = URL(fileURLWithPath: snapshot.originalPath)
-        let data = try Data(contentsOf: snapshot.snapshotURL)
-        try AtomicFileWriter.write(data, to: destination)
+        let data: Data
+        do {
+            data = try Data(contentsOf: snapshot.snapshotURL)
+        } catch {
+            throw GestaltError.readFailed(reason: error.localizedDescription)
+        }
+        do {
+            try AtomicFileWriter.write(data, to: destination)
+        } catch let writeError as AtomicFileWriter.WriteError {
+            switch writeError.category {
+            case .permission: throw GestaltError.notWritable(reason: writeError.localizedDescription)
+            case .verification: throw GestaltError.verificationFailed(reason: writeError.localizedDescription)
+            case .io: throw GestaltError.writeFailed(reason: writeError.localizedDescription)
+            }
+        }
         AuditLogger.shared.log(event: .gestaltRestored(path: destination.path))
     }
 
@@ -332,6 +443,13 @@ final class GestaltManager {
 
 // MARK: - Models
 
+/// Kết quả một lần ghi đã được xác minh bởi đọc lại file.
+struct GestaltWriteOutcome {
+    let snapshot: SnapshotManager.Snapshot
+    let verified: Bool
+    let changedKeys: [String]
+}
+
 /// Một tham số MobileGestalt hiển thị trên UI.
 struct GestaltParameter: Identifiable, Hashable {
     let key: String
@@ -345,11 +463,28 @@ struct GestaltParameter: Identifiable, Hashable {
 enum GestaltError: LocalizedError {
     case disabled(reason: String)
     case cacheNotFound(searched: String)
+    case readFailed(reason: String)
     case invalidFormat(path: String)
     case emptyKey
+    case invalidValue(reason: String)
     case snapshotFailed(reason: String)
+    case notWritable(reason: String)
     case writeFailed(reason: String)
+    case verificationFailed(reason: String)
+    case rollbackFailed(reason: String)
     case noSnapshot
+
+    /// Nhóm lỗi để UI tô màu và chọn hướng xử lý.
+    var category: String {
+        switch self {
+        case .disabled, .notWritable: return "permission"
+        case .readFailed, .invalidFormat, .cacheNotFound: return "read"
+        case .snapshotFailed, .noSnapshot: return "backup"
+        case .verificationFailed, .rollbackFailed: return "verification"
+        case .emptyKey, .invalidValue: return "validation"
+        case .writeFailed: return "write"
+        }
+    }
 
     var errorDescription: String? {
         switch self {
@@ -357,14 +492,24 @@ enum GestaltError: LocalizedError {
             return "Tính năng Gestalt bị vô hiệu hoá. \(reason)"
         case .cacheNotFound(let searched):
             return "Không tìm thấy MobileGestalt cache. Đã thử: \(searched)"
+        case .readFailed(let reason):
+            return "Không đọc được file Gestalt: \(reason)"
         case .invalidFormat(let path):
             return "File Gestalt không phải property list hợp lệ: \(path)"
         case .emptyKey:
             return "Tên tham số không được để trống."
+        case .invalidValue(let reason):
+            return "Giá trị không hợp lệ: \(reason)"
         case .snapshotFailed(let reason):
             return "Backup thất bại — đã HUỶ lệnh ghi để bảo vệ dữ liệu gốc. Lý do: \(reason)"
+        case .notWritable(let reason):
+            return "Không có quyền ghi MobileGestalt. \(reason)"
         case .writeFailed(let reason):
             return "Ghi file Gestalt thất bại: \(reason)"
+        case .verificationFailed(let reason):
+            return "Xác minh dữ liệu thất bại: \(reason)"
+        case .rollbackFailed(let reason):
+            return "Khôi phục dữ liệu gốc thất bại: \(reason)"
         case .noSnapshot:
             return "Chưa có bản backup nào trong phiên này để khôi phục."
         }

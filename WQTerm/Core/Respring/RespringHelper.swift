@@ -28,10 +28,14 @@ enum RespringMethod: String, CaseIterable {
 final class RespringHelper {
     static let shared = RespringHelper()
 
-    /// Cổng Diagnostics Relay mặc định trên loopback của LocalDevVPN.
-    static let relayURL = "http://10.7.0.1:8080/diagnostics/respring"
     /// Số giây chờ NeoSpring trước khi chuyển sang phương án dự phòng.
     static let neoSpringTimeout: TimeInterval = 8
+
+    /// URL relay lấy từ cấu hình tunnel dùng chung (không hardcode IP/port).
+    static var relayURL: URL? {
+        TunnelConfiguration.shared.relayBaseURL?
+            .appendingPathComponent("diagnostics/respring")
+    }
 
     private var overlayWindow: UIWindow?
     private var fallbackTimer: Timer?
@@ -141,7 +145,7 @@ final class RespringHelper {
             return
         }
 
-        guard let url = URL(string: Self.relayURL) else {
+        guard let url = Self.relayURL else {
             finish(false, "URL Diagnostics Relay không hợp lệ.")
             return
         }
