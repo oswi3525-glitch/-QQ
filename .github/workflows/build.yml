@@ -92,7 +92,7 @@ jobs:
           rm -rf build/Payload
           mkdir -p build/Payload
           cp -R build/WQTerm.xcarchive/Products/Applications/WQTerm.app build/Payload/
-          cd build && zip -qry WQTerm.ipa Payload
+          cd build && zip -r -X WQTerm.ipa Payload
           ls -lh WQTerm.ipa
           SIZE=$(stat -f%z WQTerm.ipa)
           MB=$((SIZE / 1048576))
