@@ -242,20 +242,17 @@ final class PairingManager: ObservableObject {
         let config = TunnelConfiguration.shared
         let parameters = NWParameters.tcp
         parameters.includePeerToPeer = true
+        let endpointPort = NWEndpoint.Port(rawValue: config.listenerPort) ?? .any
         if let address = IPv4Address(config.tunnelAddress) {
             parameters.requiredLocalEndpoint = NWEndpoint.hostPort(
                 host: .ipv4(address),
-                port: NWEndpoint.Port(rawValue: config.listenerPort) ?? 0
+                port: endpointPort
             )
         }
 
         let listener: NWListener
         do {
-            if config.listenerPort > 0, let port = NWEndpoint.Port(rawValue: config.listenerPort) {
-                listener = try NWListener(using: parameters, port: port)
-            } else {
-                listener = try NWListener(using: parameters)
-            }
+            listener = try NWListener(using: parameters, on: endpointPort)
         } catch {
             logError("TCP", "Không tạo được NWListener: \(error.localizedDescription)")
             transition(.failed, message: error.localizedDescription)
@@ -265,7 +262,7 @@ final class PairingManager: ObservableObject {
         listener.stateUpdateHandler = { [weak self] state in
             guard let self, self.generation == gen else { return }
             switch state {
-            case .setup, .preparing:
+            case .setup:
                 PairingLogger.shared.log(.info, stage: "TCP", "Listener \(state)")
             case .waiting(let reason):
                 PairingLogger.shared.log(.warn, stage: "TCP", "Listener đang chờ",

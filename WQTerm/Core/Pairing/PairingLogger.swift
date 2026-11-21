@@ -77,7 +77,7 @@ final class PairingLogger: ObservableObject {
     }
 
     func clear() {
-        DispatchQueue.main.async { entries.removeAll() }
+        DispatchQueue.main.async { self.entries.removeAll() }
         if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
     }
 
