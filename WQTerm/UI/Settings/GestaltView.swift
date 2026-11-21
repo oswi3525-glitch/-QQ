@@ -138,7 +138,7 @@ struct GestaltView: View {
                 )) {
                     HStack(spacing: 10) {
                         Image(systemName: preset.systemImage)
-                            .foregroundStyle(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                             .frame(width: 24)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(preset.title)
