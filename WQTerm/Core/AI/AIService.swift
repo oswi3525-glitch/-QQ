@@ -12,12 +12,10 @@ import Combine
 final class AIService: ObservableObject {
     static let shared = AIService()
 
-    /// Model mặc định theo yêu cầu dự án.
-    static let defaultModel = "gemini-3-flash-preview"
-    /// Endpoint mặc định: Gemini OpenAI-compatible (hỗ trợ `Authorization: Bearer`).
-    ///
-    /// Có thể đổi sang LiteRouter hoặc gateway tương thích OpenAI khác trong tab AI.
-    static let defaultEndpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    /// Model mặc định theo yêu cầu dự án (Groq).
+    static let defaultModel = "llama-3.3-70b-versatile"
+    /// Endpoint mặc định: Groq OpenAI-compatible (`Authorization: Bearer`).
+    static let defaultEndpoint = "https://api.groq.com/openai/v1/chat/completions"
 
     /// Toàn bộ hội thoại hiện tại, chia sẻ giữa tab AI và nút "Ask AI" trong viewer.
     @Published var messages: [ChatMessage] = []
@@ -61,10 +59,10 @@ final class AIService: ObservableObject {
 
     /// API key đang dùng để gọi AI.
     ///
-    /// Ưu tiên key Gemini (mặc định của tab AI); nếu trống thì thử lần lượt
+    /// Ưu tiên key Groq (mặc định của tab AI); nếu trống thì thử lần lượt
     /// các provider còn lại để tương thích cấu hình cũ.
     var apiKey: String? {
-        for provider in [AIProvider.gemini, .codex, .claude] {
+        for provider in [AIProvider.groq, .gemini, .codex, .claude] {
             if let value = try? store.key(provider), !value.isEmpty { return value }
         }
         return nil
@@ -72,14 +70,14 @@ final class AIService: ObservableObject {
 
     var hasAPIKey: Bool { apiKey != nil }
 
-    /// Lưu API key vào Keychain (provider Gemini — mặc định của tab AI).
+    /// Lưu API key vào Keychain (provider Groq — mặc định của tab AI).
     func saveAPIKey(_ value: String) throws {
-        try store.saveKey(value, for: .gemini)
+        try store.saveKey(value, for: .groq)
     }
 
-    /// Xoá API key Gemini khỏi Keychain.
+    /// Xoá API key Groq khỏi Keychain.
     func deleteAPIKey() throws {
-        try store.deleteKey(for: .gemini)
+        try store.deleteKey(for: .groq)
     }
 
     /// Kiểm tra API key + model bằng một request tối thiểu.

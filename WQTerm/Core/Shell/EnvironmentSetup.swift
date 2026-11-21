@@ -261,30 +261,38 @@ final class EnvironmentSetup: ObservableObject {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    /// Cài `ai.py` từ bundle vào `~/.terminal/` để Terminal gọi được.
+    /// Cài `ai.py` + `ai_cli.py` từ bundle vào `~/.terminal/` để Terminal gọi được.
     ///
-    /// Script dùng `requests` (pure-Python) thay vì `openai` để tránh lỗi
-    /// C-extension trên Python nhúng của a-Shell (Module 4).
+    /// `ai_cli.py` là CLI chính dùng Groq API; `ai.py` chỉ là lớp tương thích
+    /// chuyển tiếp. Cả hai dùng `requests` (pure-Python) để tránh lỗi C-extension
+    /// trên Python nhúng của a-Shell/iOS.
     @discardableResult
     func installAIScript() -> Bool {
-        let destination = configDirectory.appendingPathComponent("ai.py")
-        if fileManager.fileExists(atPath: destination.path) { return true }
+        try? fileManager.createDirectory(at: configDirectory,
+                                         withIntermediateDirectories: true, attributes: nil)
+        var installedAll = true
+        for name in ["ai_cli.py", "ai.py"] {
+            let destination = configDirectory.appendingPathComponent(name)
+            if fileManager.fileExists(atPath: destination.path) { continue }
 
-        let source = Bundle.main.path(forResource: "ai", ofType: "py", inDirectory: "Resources/Scripts")
-            ?? Bundle.main.path(forResource: "ai", ofType: "py")
-        guard let source else { return false }
+            let stem = (name as NSString).deletingPathExtension
+            let source = Bundle.main.path(forResource: stem, ofType: "py", inDirectory: "Resources/Scripts")
+                ?? Bundle.main.path(forResource: stem, ofType: "py")
+            guard let source else {
+                installedAll = false
+                continue
+            }
 
-        do {
-            try fileManager.createDirectory(at: configDirectory,
-                                            withIntermediateDirectories: true, attributes: nil)
-            try fileManager.copyItem(atPath: source, toPath: destination.path)
-            try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)],
-                                          ofItemAtPath: destination.path)
-            return true
-        } catch {
-            lastError = error.localizedDescription
-            return false
+            do {
+                try fileManager.copyItem(atPath: source, toPath: destination.path)
+                try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)],
+                                              ofItemAtPath: destination.path)
+            } catch {
+                lastError = error.localizedDescription
+                installedAll = false
+            }
         }
+        return installedAll
     }
 }
 

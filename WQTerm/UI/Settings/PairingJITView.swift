@@ -12,6 +12,7 @@ struct PairingJITView: View {
 
     var body: some View {
         Form {
+            vpnSection
             statusSection
             instructionsSection
             pinSection
@@ -43,6 +44,43 @@ struct PairingJITView: View {
             ShareSheet(items: [payload.url])
         }
         .onAppear { pairing.recheck() }
+    }
+
+    // MARK: - LocalDevVPN
+
+    private var vpnSection: some View {
+        Section {
+            HStack(spacing: 10) {
+                Image(systemName: pairing.isLocalDevVPNActive ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(pairing.isLocalDevVPNActive ? .green : .orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(pairing.isLocalDevVPNActive
+                         ? "LocalDevVPN đang bật" : PairingManager.vpnWarning)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(pairing.isLocalDevVPNActive ? .green : .orange)
+                    Text(pairing.tunnelSummary)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if !pairing.isLocalDevVPNActive {
+                Button {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                } label: {
+                    Label("Mở Cài đặt", systemImage: "gearshape")
+                }
+                .liquidGlassButton()
+            }
+        } header: {
+            Text("LocalDevVPN (bắt buộc)")
+        } footer: {
+            Text("Pairing iOS 27 cần tunnel loopback 10.7.0.1. Chưa bật VPN thì màn hình "
+                 + "nhập mã PIN sẽ không xuất hiện sau khi nhập mật khẩu khóa máy.")
+                .font(.caption2)
+        }
     }
 
     // MARK: - Status
@@ -174,13 +212,25 @@ struct PairingJITView: View {
                 } label: {
                     Label("Dừng quảng bá", systemImage: "stop.circle")
                 }
+                .liquidGlassButton()
             } else {
                 Button {
-                    pairing.startHost()
+                    if pairing.beginPairing() {
+                        message = "Đã bắt đầu ghép nối. Mã PIN cũng được gửi lên thanh thông báo."
+                    } else {
+                        message = pairing.lastError ?? PairingManager.vpnWarning
+                    }
                 } label: {
                     Label("Bắt đầu ghép nối", systemImage: "antenna.radiowaves.left.and.right")
                 }
-                .buttonStyle(.borderedProminent)
+                .liquidGlassButton()
+            }
+
+            Button {
+                pairing.postPINNotification()
+                message = "Đã gửi mã \(pairing.pairingCode) lên thanh thông báo."
+            } label: {
+                Label("Hiện mã trên thông báo", systemImage: "bell.badge")
             }
 
             Button {
@@ -189,6 +239,13 @@ struct PairingJITView: View {
                     + "vào Cài đặt › WQTerm › Mạng nội bộ để bật."
             } label: {
                 Label("Cấp quyền Mạng nội bộ", systemImage: "wifi")
+            }
+
+            Button {
+                pairing.forceReset()
+                message = pairing.statusMessage
+            } label: {
+                Label("Đặt lại luồng ghép nối", systemImage: "arrow.counterclockwise")
             }
 
             Button {
@@ -201,8 +258,9 @@ struct PairingJITView: View {
         } header: {
             Text("Mã PIN 6 chữ số")
         } footer: {
-            Text("Mã được sinh ngẫu nhiên mỗi phiên. Nhập mã này trên iPhone khi hộp thoại "
-                 + "ghép nối xuất hiện. Không chia sẻ mã cho người khác.")
+            Text("Mã được sinh ngẫu nhiên mỗi phiên và hiển thị trên Dynamic Island hoặc "
+                 + "thanh thông báo. Nhập mã trong Cài đặt › Chế độ nhà phát triển › Ghép nối. "
+                 + "Không chia sẻ mã cho người khác.")
                 .font(.caption2)
         }
     }

@@ -145,7 +145,7 @@ struct LockPlaceholderView: View {
             } label: {
                 Label("Mở khoá bằng Face ID", systemImage: "faceid")
             }
-            .buttonStyle(.borderedProminent)
+            .liquidGlassButton()
 
             if let message {
                 Text(message)
@@ -183,8 +183,44 @@ struct OnboardingView: View {
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
 
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Thiết lập nhanh (3 bước)")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    ForEach(Array(PairingManager.steps.enumerated()), id: \.offset) { index, step in
+                        HStack(alignment: .top, spacing: 10) {
+                            Text("\(index + 1)")
+                                .font(.caption.bold().monospacedDigit())
+                                .foregroundStyle(.white)
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(Color.accentColor))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(step.title).font(.subheadline.weight(.semibold))
+                                Text(step.detail)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        Image(systemName: NetworkUtils.isLocalDevVPNActive
+                              ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
+                        Text(NetworkUtils.isLocalDevVPNActive
+                             ? "LocalDevVPN đã sẵn sàng"
+                             : PairingManager.vpnWarning)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(NetworkUtils.isLocalDevVPNActive ? .green : .orange)
+                    .padding(10)
+                    .liquidGlass(cornerRadius: 12)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 8)
+
                 Button("Tôi đồng ý và tiếp tục") { onAgree() }
-                    .buttonStyle(.borderedProminent)
+                    .liquidGlassButton()
                     .padding(.top, 4)
             }
             .padding(24)

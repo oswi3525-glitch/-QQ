@@ -13,6 +13,18 @@ import Foundation
 /// }
 /// ```
 enum SnapshotEngine {
+    /// Backup file MobileGestalt gốc — tên gọi ngắn theo PRD.
+    ///
+    /// Mọi thao tác ghi Gestalt (preset hoặc key đơn) phải gọi hàm này hoặc
+    /// `createSnapshot(for:)` TRƯỚC khi ghi; nếu ném lỗi thì huỷ lệnh ghi.
+    @discardableResult
+    static func createSnapshot() throws -> SnapshotManager.Snapshot {
+        guard let url = GestaltManager.shared.locateCacheFile() else {
+            throw GestaltError.cacheNotFound(searched: GestaltManager.systemCacheDirectory)
+        }
+        return try createSnapshot(for: url)
+    }
+
     /// Tạo snapshot cho `url`. **Ném lỗi** nếu không sao lưu được — call site phải huỷ lệnh ghi.
     @discardableResult
     static func createSnapshot(for url: URL) throws -> SnapshotManager.Snapshot {

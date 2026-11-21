@@ -31,6 +31,70 @@ final class GestaltManager {
         "AirplaneMode"
     ]
 
+    /// Các preset có sẵn (tham khảo GestaltX / GestaltEdit).
+    /// Tên key là tên cộng đồng thường gặp; một số bản iOS có thể đổi key —
+    /// người dùng luôn có nút "Khôi phục snapshot" nếu kết quả không như ý.
+    enum Preset: String, CaseIterable, Identifiable {
+        case dynamicIsland
+        case alwaysOnDisplay
+        case actionButton
+        case cameraControl
+        case collisionSOS
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .dynamicIsland: return "Dynamic Island"
+            case .alwaysOnDisplay: return "Always-On Display (AOD)"
+            case .actionButton: return "Action Button"
+            case .cameraControl: return "Camera Control"
+            case .collisionSOS: return "Collision SOS"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .dynamicIsland: return "rectangle.on.rectangle"
+            case .alwaysOnDisplay: return "sun.max"
+            case .actionButton: return "switch.2"
+            case .cameraControl: return "camera"
+            case .collisionSOS: return "phone.fill"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .dynamicIsland: return "Bật/tắt và đổi layout (thanh/pill)."
+            case .alwaysOnDisplay: return "Bật/tắt AOD, độ sáng và hiệu ứng."
+            case .actionButton: return "Gán chức năng cho nút tác vụ."
+            case .cameraControl: return "Bật/tắt và cấu hình nút Camera Control."
+            case .collisionSOS: return "Gọi khẩn cấp khi phát hiện va chạm."
+            }
+        }
+
+        /// Giá trị ghi khi bật preset.
+        var enabledValues: [String: String] {
+            switch self {
+            case .dynamicIsland:
+                return ["DynamicIsland": "1", "DeviceSupportsDynamicIsland": "1", "DynamicIslandType": "2"]
+            case .alwaysOnDisplay:
+                return ["AlwaysOnDisplay": "1", "AODAlwaysOn": "1", "AlwaysOnDisplayBrightness": "100"]
+            case .actionButton:
+                return ["ActionButton": "1", "ActionButtonFunction": "silent"]
+            case .cameraControl:
+                return ["CameraControl": "1", "CameraControlEnabled": "1", "CameraControlFunction": "zoom"]
+            case .collisionSOS:
+                return ["CollisionSOS": "1", "CollisionDetectionEnabled": "1"]
+            }
+        }
+
+        /// Giá trị ghi khi tắt preset (vẫn giữ cấu hình phụ, chỉ tắt công tắc chính).
+        var disabledValues: [String: String] {
+            Dictionary(uniqueKeysWithValues: enabledValues.keys.map { ($0, "0") })
+        }
+    }
+
     /// Snapshot ứng với lần ghi gần nhất — dùng cho nút "Khôi phục" trên UI.
     private(set) var lastSnapshot: SnapshotManager.Snapshot?
 
@@ -151,6 +215,51 @@ final class GestaltManager {
         return String(describing: value)
     }
 
+    // MARK: - Presets
+
+    /// Trạng thái bật/tắt hiện tại của các preset (đọc từ cache, không ghi).
+    func presetStates() -> [Preset: Bool] {
+        guard let dictionary = try? read() else { return [:] }
+        var states: [Preset: Bool] = [:]
+        for preset in Preset.allCases {
+            let primaryKey = Array(preset.enabledValues.keys).first ?? preset.rawValue
+            let raw = Self.describe(dictionary[primaryKey]).lowercased()
+            states[preset] = ["1", "true", "yes", "on"].contains(raw)
+        }
+        return states
+    }
+
+    /// Áp dụng một preset (bật hoặc tắt).
+    ///
+    /// **Bắt buộc**: `SnapshotEngine.createSnapshot()` được gọi TRƯỚC khi sửa plist.
+    /// Nếu backup thất bại → ném `GestaltError.snapshotFailed` → không ghi gì cả.
+    @discardableResult
+    func apply(preset: Preset, enabled: Bool) throws -> SnapshotManager.Snapshot {
+        guard compatibility.canWriteGestalt else {
+            let reason = compatibility.gestaltBlockReason ?? "Không hỗ trợ trên phiên bản iOS này."
+            AuditLogger.shared.log(event: .gestaltWriteBlocked(reason: reason))
+            throw GestaltError.disabled(reason: reason)
+        }
+
+        let url = try requireCacheFile()
+        let snapshot = try SnapshotEngine.createSnapshot()
+        let values = enabled ? preset.enabledValues : preset.disabledValues
+
+        var dictionary = try read()
+        for (key, value) in values { dictionary[key] = value }
+        let updated = try PropertyListSerialization.data(fromPropertyList: dictionary,
+                                                         format: .binary, options: 0)
+        do {
+            try AtomicFileWriter.write(updated, to: url)
+        } catch {
+            throw GestaltError.writeFailed(reason: error.localizedDescription)
+        }
+
+        lastSnapshot = snapshot
+        AuditLogger.shared.log(event: .gestaltWrite(key: preset.rawValue))
+        return snapshot
+    }
+
     // MARK: - Write (snapshot → atomic rename)
 
     /// Ghi một tham số vào MobileGestalt cache.
@@ -178,7 +287,7 @@ final class GestaltManager {
         // 2. Write-ahead snapshot — BẮT BUỘC, thất bại thì huỷ lệnh ghi.
         let snapshot: SnapshotManager.Snapshot
         do {
-            snapshot = try SnapshotEngine.createSnapshot(for: url)
+            snapshot = try SnapshotEngine.createSnapshot()
         } catch {
             AuditLogger.shared.log(event: .gestaltWriteBlocked(reason: error.localizedDescription))
             throw GestaltError.snapshotFailed(reason: error.localizedDescription)

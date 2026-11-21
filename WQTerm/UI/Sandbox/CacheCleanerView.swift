@@ -206,7 +206,7 @@ struct CacheCleanerView: View {
                         Label("Dọn dẹp", systemImage: "trash")
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .liquidGlassButton()
                 .disabled(selected.isEmpty || cleaner.isCleaning || cleaner.isScanning)
             }
         }

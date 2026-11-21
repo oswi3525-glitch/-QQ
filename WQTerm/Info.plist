@@ -41,6 +41,11 @@
         <string>_remotepairing-pairable-host._tcp</string>
         <string>_remotepairing._tcp</string>
     </array>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>UIRequiredDeviceCapabilities</key>
     <array>
         <string>arm64</string>

@@ -3,6 +3,7 @@ import SwiftUI
 
 /// Một nhà cung cấp AI mà WQTerm hỗ trợ.
 enum AIProvider: String, CaseIterable, Identifiable {
+    case groq
     case gemini
     case claude
     case codex
@@ -11,6 +12,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
+        case .groq: return "Groq"
         case .gemini: return "Gemini"
         case .claude: return "Claude"
         case .codex: return "Codex (OpenAI)"
@@ -20,15 +22,17 @@ enum AIProvider: String, CaseIterable, Identifiable {
     /// Tên biến môi trường mà CLI tương ứng đọc key.
     var environmentKey: String {
         switch self {
+        case .groq: return "GROQ_API_KEY"
         case .gemini: return "GEMINI_API_KEY"
         case .claude: return "ANTHROPIC_API_KEY"
         case .codex: return "OPENAI_API_KEY"
         }
     }
 
-    /// Đường dẫn tương đối tới CLI trong bundle.
+    /// Đường dẫn tương đối tới CLI trong bundle. Groq dùng script Python nhúng.
     var binaryRelativePath: String {
         switch self {
+        case .groq: return "Resources/Scripts/ai_cli.py"
         case .gemini: return "Resources/node_modules/.bin/gemini"
         case .claude: return "Resources/node_modules/.bin/claude"
         case .codex: return "Resources/node_modules/.bin/codex"
@@ -40,6 +44,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .groq: return "bolt.fill"
         case .gemini: return "sparkle"
         case .claude: return "brain"
         case .codex: return "chevron.left.forwardslash.chevron.right"
@@ -69,9 +74,8 @@ final class AIProviderStore: ObservableObject {
         refresh()
     }
 
-    /// Endpoint mặc định — LiteRouter, gateway tương thích OpenAI/Anthropic
-    /// (PRD Module 4: mọi CLI đi qua một router duy nhất).
-    static let defaultBaseURL = "https://literouter.fun/v1"
+    /// Endpoint mặc định — Groq (OpenAI-compatible).
+    static let defaultBaseURL = "https://api.groq.com/openai/v1"
 
     /// Đọc lại trạng thái cấu hình của tất cả provider.
     func refresh() {

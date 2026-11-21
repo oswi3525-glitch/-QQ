@@ -2,10 +2,9 @@ name: WQTerm
 options:
   bundleIdPrefix: com.wqterm.app
   deploymentTarget:
-    # iOS 17 là mức tối thiểu cho ContentUnavailableView / NavigationSplitView /
-    # .topBarLeading — các API được dùng xuyên suốt tầng UI.
-    iOS: "17.0"
-  xcodeVersion: "15.4"
+    # iOS 26 là mức tối thiểu để theo chuẩn Liquid Glass / iOS 27.
+    iOS: "26.0"
+  xcodeVersion: "26.0"
   createIntermediateGroups: true
   indentWidth: 2
   tabWidth: 2
@@ -14,7 +13,7 @@ targets:
   WQTerm:
     type: application
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "26.0"
     entitlements:
       path: WQTerm/WQTerm.entitlements
       properties:
@@ -34,7 +33,7 @@ targets:
       - path: WQTerm/Resources/Recipes
         type: folder
         buildPhase: resources
-      # Script Python cho lệnh `ai` (dùng requests, không dùng openai).
+      # Script Python cho lệnh `ai` (ai_cli.py dùng Groq + requests; ai.py là shim).
       - path: WQTerm/Resources/Scripts
         type: folder
         buildPhase: resources
@@ -59,7 +58,7 @@ targets:
         INFOPLIST_FILE: WQTerm/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.wqterm.app
         SWIFT_VERSION: "5.9"
-        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "26.0"
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_ALLOWED: "NO"

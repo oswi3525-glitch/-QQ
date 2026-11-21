@@ -20,13 +20,15 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Fetch embedded Python runtime (arm64)
+      - name: Fetch embedded Python runtime (arm64, slim)
         run: |
-          # Module 5 yêu cầu Python 3 thật trong app. Gói 258MB không nằm trong
-          # repo nên CI tải + trích slice arm64 (~217MB) trước khi generate project.
+          # Chỉ lấy slice arm64 + stdlib đã cắt gọn để IPA nằm dưới 100MB.
           set -o pipefail
           bash scripts/fetch_runtime.sh 2>&1 | tail -20
           du -sh WQTerm/Resources/python-runtime || true
+
+      - name: Slim embedded runtime for <100MB IPA
+        run: bash scripts/slim_runtime.sh
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -98,8 +100,12 @@ jobs:
           MB=$((SIZE / 1048576))
           echo "### IPA size: ${MB} MB (${SIZE} bytes)" >> "$GITHUB_STEP_SUMMARY"
           echo "IPA size: ${MB} MB"
-          if [ "$MB" -lt 50 ]; then
-            echo "::warning::IPA nhỏ hơn 50MB — kiểm tra toolchain/runtime đã nhúng."
+          if [ "$MB" -ge 100 ]; then
+            echo "::error::IPA vượt giới hạn 100MB (${MB} MB)."
+            exit 1
+          fi
+          if [ "$MB" -lt 30 ]; then
+            echo "::warning::IPA nhỏ hơn 30MB — kiểm tra toolchain/runtime đã nhúng."
           fi
 
       - name: Upload build log

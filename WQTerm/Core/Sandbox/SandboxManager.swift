@@ -95,7 +95,8 @@ final class SandboxManager: ObservableObject {
         let bundleRoots = [
             "/var/containers/Bundle/Application",
             "/private/var/containers/Bundle/Application",
-            "/var/mobile/Containers/Bundle/Application"
+            "/var/mobile/Containers/Bundle/Application",
+            "/private/var/mobile/Containers/Bundle/Application"
         ]
 
         var bundleDirectories: [URL] = []
@@ -105,10 +106,16 @@ final class SandboxManager: ObservableObject {
                   isDirectory.boolValue else { continue }
             SandboxAccess.grantRead(to: path)
             let children = (try? fileManager.contentsOfDirectory(at: URL(fileURLWithPath: path),
-                                                                includingPropertiesForKeys: [.isDirectoryKey],
-                                                                options: [])) ?? []
+                                                                 includingPropertiesForKeys: [.isDirectoryKey],
+                                                                 options: [])) ?? []
             bundleDirectories.append(contentsOf: children)
             if !bundleDirectories.isEmpty { break }
+        }
+
+        // worse_query fallback: nếu đường dẫn hệ thống không đọc trực tiếp được,
+        // dò các bundle đã được mount vào App Group container của chính app.
+        if bundleDirectories.isEmpty {
+            bundleDirectories = discoverBundleDirectoriesViaAppGroup()
         }
 
         guard !bundleDirectories.isEmpty else { return [] }
@@ -133,6 +140,34 @@ final class SandboxManager: ObservableObject {
         return result
             .filter { seen.insert($0.bundleID).inserted }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Dò các bundle đã được worse_query mount vào App Group container.
+    /// Mỗi symlink/con con trỏ tới một `.app` thật — dùng làm phương án cuối
+    /// khi `/var/containers/Bundle/Application` không đọc trực tiếp được.
+    private func discoverBundleDirectoriesViaAppGroup() -> [URL] {
+        guard let group = fileManager.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.com.wqterm.app"
+        ) else { return [] }
+
+        var found: [URL] = []
+        let candidates = [
+            group.appendingPathComponent("_sandbox", isDirectory: true),
+            group.appendingPathComponent("Library/Caches", isDirectory: true),
+            group
+        ]
+        for root in candidates {
+            let children = (try? fileManager.contentsOfDirectory(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey], options: []
+            )) ?? []
+            for child in children where child.pathExtension.lowercased() == "app" {
+                SandboxAccess.grantRead(to: child.path)
+                found.append(child.deletingLastPathComponent())
+            }
+            found = Array(Set(found))
+            if !found.isEmpty { break }
+        }
+        return found
     }
 
     /// Đọc Info.plist của bundle và dựng `InstalledApp`.
@@ -160,8 +195,11 @@ final class SandboxManager: ObservableObject {
         }
 
         // CFBundleDisplayName là tên người dùng thấy trên Home Screen.
-        let name = (info["CFBundleDisplayName"] as? String)
-            ?? (info["CFBundleName"] as? String)
+        // Nếu localized (dạng "$(PRODUCT_NAME)") thì fallback sang CFBundleName/
+        // CFBundleExecutable rồi đến tên file .app — luôn có tên để hiển thị.
+        let name = Self.cleanDisplayName(info["CFBundleDisplayName"] as? String)
+            ?? Self.cleanDisplayName(info["CFBundleName"] as? String)
+            ?? Self.cleanDisplayName(info["CFBundleExecutable"] as? String)
             ?? bundleURL.deletingPathExtension().lastPathComponent
 
         let dataContainer = dataContainers[bundleID]
@@ -184,7 +222,9 @@ final class SandboxManager: ObservableObject {
     func dataContainersByBundleID() -> [String: URL] {
         let roots = [
             "/var/mobile/Containers/Data/Application",
-            "/private/var/mobile/Containers/Data/Application"
+            "/private/var/mobile/Containers/Data/Application",
+            "/var/containers/Data/Application",
+            "/private/var/containers/Data/Application"
         ]
         var mapping: [String: URL] = [:]
 
@@ -239,6 +279,16 @@ final class SandboxManager: ObservableObject {
                                                             includingPropertiesForKeys: nil,
                                                             options: [])) ?? []
         return children.first { $0.pathExtension.lowercased() == "png" }
+    }
+
+    /// Loại bỏ placeholder/localization phổ biến trong `CFBundleDisplayName`.
+    private static func cleanDisplayName(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !trimmed.hasPrefix("$("),
+              trimmed != "CFBundleDisplayName" else { return nil }
+        return trimmed
     }
 
     // MARK: - Mount container

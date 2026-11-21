@@ -15,6 +15,8 @@ struct SandboxView: View {
     @State private var progressMessage = ""
     @State private var errorMessage: String?
     @State private var showCacheCleaner = false
+    @State private var showRespringConfirm = false
+    @State private var respringMessage: String?
 
     private var filteredApps: [InstalledApp] {
         let query = searchText.trimmingCharacters(in: .whitespaces)
@@ -65,6 +67,23 @@ struct SandboxView: View {
                 } message: {
                     Text(errorMessage ?? "")
                 }
+                .confirmationDialog("Respring SpringBoard?",
+                                    isPresented: $showRespringConfirm,
+                                    titleVisibility: .visible) {
+                    Button("Respring", role: .destructive) { performRespring() }
+                    Button("Huỷ", role: .cancel) {}
+                } message: {
+                    Text("Màn hình sẽ đen vài giây rồi SpringBoard khởi động lại. "
+                         + "Ứng dụng đang mở sẽ bị đóng — không reboot thiết bị.")
+                }
+                .alert("Respring", isPresented: Binding(
+                    get: { respringMessage != nil },
+                    set: { if !$0 { respringMessage = nil } }
+                )) {
+                    Button("OK", role: .cancel) { respringMessage = nil }
+                } message: {
+                    Text(respringMessage ?? "")
+                }
         }
     }
     // MARK: - Content
@@ -96,6 +115,28 @@ struct SandboxView: View {
 
     private var appList: some View {
         List {
+            Section {
+                Button {
+                    showRespringConfirm = true
+                } label: {
+                    Label("Respring (không reboot)", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .liquidGlassButton()
+
+                Button {
+                    showCacheCleaner = true
+                } label: {
+                    Label("Dọn Cache", systemImage: "trash.circle")
+                }
+                .liquidGlassButton()
+            } header: {
+                Text("Thao tác nhanh")
+            } footer: {
+                Text("Respring dùng NeoSpring (WebKit GPU), dự phòng qua LocalDevVPN. "
+                     + "Dọn Cache luôn backup trước khi xoá và có xác nhận.")
+                    .font(.caption2)
+            }
+
             Section {
                 ForEach(filteredApps) { app in
                     NavigationLink {
@@ -185,6 +226,15 @@ struct SandboxView: View {
     }
 
     // MARK: - Actions
+
+    private func performRespring() {
+        RespringHelper.shared.respring { success, message in
+            respringMessage = message
+            if success {
+                AuditLogger.shared.log(event: .fileWrite(path: "respring"))
+            }
+        }
+    }
 
     private func startDump(_ app: InstalledApp) {
         pendingDump = nil

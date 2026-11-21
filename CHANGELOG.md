@@ -1,5 +1,14 @@
 # WQTerm — CHANGELOG
 
+## [Unreleased] — Đại tu iOS 27
+- Pairing: thêm `NetworkUtils` kiểm tra LocalDevVPN (utun / 10.7.0.1), cảnh báo khi chưa bật, luồng `beginPairing()` không treo sau mật khẩu khóa máy, đẩy mã PIN lên thông báo, onboarding 3 bước.
+- UI: component Liquid Glass dùng chung, áp dụng cho nút chính/tab; tương phản Dark Mode.
+- Sandbox: mở rộng đường dẫn quét bundle/data container, fallback worse_query qua App Group, lọc tên hiển thị, thêm nút Respring & Dọn Cache.
+- Gestalt: thêm 5 preset (Dynamic Island, AOD, Action Button, Camera Control, Collision SOS); mọi ghi bắt buộc qua `SnapshotEngine.createSnapshot()`.
+- Respring: `RespringHelper` với NeoSpring (WKWebView GPU overload) + dự phòng Diagnostics Relay qua LocalDevVPN.
+- AI CLI: `ai_cli.py` dùng Groq API (`llama-3.3-70b-versatile` / `gpt-oss-120b`), `ai.py` là shim; thêm provider Groq.
+- Build: deployment target iOS 26, slim Python runtime, CI chặn IPA >= 100MB.
+
 ## [1.0.0] — 2026-11-19 (M0 scaffold)
 - Tạo cấu trúc dự án theo PRD WQTerm
 - Thêm WQTerm.entitlements (App Group `group.com.wqterm.app`, get-task-allow)

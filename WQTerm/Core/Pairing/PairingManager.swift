@@ -2,6 +2,7 @@ import Foundation
 import Network
 import Security
 import Combine
+import UserNotifications
 
 /// Pairing (PRD Module 8.1) — iOS 27 device-initiated remote pairing.
 ///
@@ -71,18 +72,14 @@ final class PairingManager: ObservableObject {
         ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
     }
 
-    /// Hướng dẫn từng bước hiển thị trong Settings.
+    /// Hướng dẫn 3 bước theo luồng pairing iOS 27 (dùng cho cả Onboarding).
     static let steps: [(title: String, detail: String)] = [
-        ("Bật Developer Mode",
-         "Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển, bật và khởi động lại máy."),
-        ("Cấp quyền Mạng nội bộ",
-         "Cài đặt › WQTerm › Mạng nội bộ → bật. WQTerm cần quyền này để quảng bá dịch vụ ghép nối."),
-        ("Bắt đầu ghép nối",
-         "Bấm \"Bắt đầu ghép nối\" bên dưới. WQTerm sẽ quảng bá dịch vụ Bonjour và hiện mã PIN."),
-        ("Nhập mã trên iPhone",
-         "Cài đặt › Chế độ nhà phát triển › Ghép nối, chọn WQTerm và nhập mã PIN 6 chữ số."),
-        ("Lưu pairing file",
-         "Khi ghép nối xong, WQTerm tự lưu file mobiledevicepairing vào Documents/ để dùng cho JIT/SideStore.")
+        ("Bật LocalDevVPN",
+         "Bật LocalDevVPN để tạo tunnel loopback 10.7.0.1. Nếu chưa bật, màn hình nhập mã PIN sẽ không xuất hiện."),
+        ("Mở Chế độ nhà phát triển",
+         "Vào Cài đặt › Quyền riêng tư & Bảo mật › Chế độ nhà phát triển › Ghép nối với WQTerm."),
+        ("Nhập mã PIN 6 số",
+         "Mã hiển thị trên Dynamic Island hoặc thanh thông báo. Nhập mã đó trên iPhone để hoàn tất ghép nối.")
     ]
 
     /// Tạo mã hiển thị cho người dùng nhập trên thiết bị iOS.
@@ -94,8 +91,66 @@ final class PairingManager: ObservableObject {
     func refreshCode() {
         pairingCode = Self.generateCode()
         statusMessage = isAdvertising
-            ? "Mã mới: \(pairingCode). Nhập mã này trên iPhone."
+            ? "Mã mới: \(pairingCode). Mã hiện trên Dynamic Island/thông báo."
             : statusMessage
+        postPINNotification()
+    }
+
+    // MARK: - Điều kiện tiên quyết (LocalDevVPN)
+
+    /// `true` nếu LocalDevVPN đang bật — điều kiện bắt buộc để hiện màn hình PIN.
+    var isLocalDevVPNActive: Bool { NetworkUtils.isLocalDevVPNActive }
+
+    /// Thông tin tunnel hiển thị trên UI.
+    var tunnelSummary: String { NetworkUtils.currentTunnelInfo().summary }
+
+    /// Cảnh báo hiển thị khi VPN chưa bật.
+    static let vpnWarning = "Vui lòng bật LocalDevVPN trước khi ghép nối"
+
+    /// Entry point duy nhất được nút "Ghép nối" gọi.
+    ///
+    /// Trả về `false` kèm `lastError` nếu LocalDevVPN chưa bật — UI không được
+    /// chuyển sang màn hình nhập PIN trong trường hợp này.
+    @discardableResult
+    func beginPairing() -> Bool {
+        guard isLocalDevVPNActive else {
+            lastError = Self.vpnWarning
+            statusMessage = nil
+            AuditLogger.shared.log(event: .worseQueryExtensionFailed(bundleID: "LocalDevVPN"))
+            return false
+        }
+        lastError = nil
+        requestLocalNetworkPermission()
+        startHost()
+        postPINNotification()
+        return true
+    }
+
+    /// Đưa mã PIN lên thanh thông báo (Dynamic Island cần widget extension riêng).
+    func postPINNotification() {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "WQTerm — mã ghép nối"
+            content.body = "Mã PIN 6 số: \(self.pairingCode). Nhập trong Cài đặt › Chế độ nhà phát triển."
+            content.sound = .default
+            let request = UNNotificationRequest(identifier: "WQTerm.Pairing.PIN",
+                                                content: content, trigger: nil)
+            center.add(request) { _ in
+                DispatchQueue.main.async {
+                    self.statusMessage = "Mã \(self.pairingCode) đã được gửi tới thanh thông báo."
+                }
+            }
+        }
+    }
+
+    /// Đặt lại mọi trạng thái "treo" sau khi nhập mật khẩu khóa máy.
+    func forceReset() {
+        stopHost()
+        lastError = nil
+        statusMessage = "Đã đặt lại luồng ghép nối. Bấm \"Bắt đầu ghép nối\" để thử lại."
+        pairingCode = Self.generateCode()
     }
 
     // MARK: - Host lifecycle
@@ -103,6 +158,11 @@ final class PairingManager: ObservableObject {
     /// Bắt đầu quảng bá dịch vụ pairing và sinh PIN mới.
     func startHost() {
         guard !isAdvertising else { return }
+        // Dọn listener cũ (có thể còn sống sau lần trước bị ngắt bởi mật khẩu khóa máy).
+        listener?.cancel()
+        listener = nil
+        browser?.cancel()
+        browser = nil
         lastError = nil
         isDeviceConnected = false
         pairingCode = Self.generateCode()
@@ -124,7 +184,8 @@ final class PairingManager: ObservableObject {
                     case .ready:
                         self.isAdvertising = true
                         self.advertisedPort = listener.port?.rawValue
-                        self.statusMessage = "Đang quảng bá \(Self.serviceName). Nhập mã \(self.pairingCode) trên iPhone."
+                        self.statusMessage = "Đang quảng bá \(Self.serviceName). Mã \(self.pairingCode) "
+                            + "hiện trên Dynamic Island/thông báo — nhập trong Cài đặt › Chế độ nhà phát triển."
                     case .failed(let error):
                         self.isAdvertising = false
                         self.advertisedPort = nil
@@ -148,6 +209,7 @@ final class PairingManager: ObservableObject {
             statusMessage = "Đang khởi động pairing host…"
             // Chạm vào NWBrowser để iOS hiện prompt quyền Mạng nội bộ.
             requestLocalNetworkPermission()
+            scheduleWatchdog()
         } catch {
             lastError = "Không tạo được NWListener: \(error.localizedDescription)"
         }
@@ -189,6 +251,18 @@ final class PairingManager: ObservableObject {
             guard let self else { return }
             self.browser?.cancel()
             self.browser = nil
+        }
+    }
+
+    /// Nếu sau 30 giây vẫn không có thiết bị kết nối, đưa ra hướng dẫn cụ thể
+    /// thay vì để UI đứng im ở trạng thái "Đang khởi động…".
+    private func scheduleWatchdog() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self, self.isAdvertising,
+                  !self.isDeviceConnected, !self.isPaired else { return }
+            self.statusMessage = "Chưa thấy thiết bị. Kiểm tra LocalDevVPN, "
+                + "Developer Mode và quyền Mạng nội bộ rồi thử lại. "
+                + "Mã PIN: \(self.pairingCode)"
         }
     }
 

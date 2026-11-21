@@ -9,6 +9,7 @@ struct GestaltView: View {
     @StateObject private var safeMode = SafeMode.shared
 
     @State private var cachePath: String?
+    @State private var presetStates: [GestaltManager.Preset: Bool] = [:]
     @State private var parameters: [GestaltParameter] = []
     @State private var filter = ""
     @State private var errorMessage: String?
@@ -18,6 +19,7 @@ struct GestaltView: View {
     @State private var editingValue = ""
     @State private var showingWrite = false
     @State private var pendingRestore = false
+    @State private var pendingPreset: (preset: GestaltManager.Preset, enabled: Bool)?
 
     private var isWriteAllowed: Bool {
         compatibility.canWriteGestalt && !safeMode.isEnabled && cachePath != nil
@@ -35,6 +37,7 @@ struct GestaltView: View {
         Form {
             statusSection
             if cachePath != nil {
+                presetsSection
                 parametersSection
                 actionsSection
             }
@@ -67,6 +70,21 @@ struct GestaltView: View {
             isPresented: $pendingRestore
         ) {
             restore()
+        }
+        .confirmationDialog("Áp dụng preset?",
+                            isPresented: Binding(
+                                get: { pendingPreset != nil },
+                                set: { if !$0 { pendingPreset = nil } }
+                            ),
+                            titleVisibility: .visible,
+                            presenting: pendingPreset) { pending in
+            Button(pending.enabled ? "Bật \(pending.preset.title)" : "Tắt \(pending.preset.title)",
+                   role: .destructive) {
+                apply(preset: pending.preset, enabled: pending.enabled)
+            }
+            Button("Huỷ", role: .cancel) { pendingPreset = nil }
+        } message: { pending in
+            Text("\(pending.preset.detail) Snapshot sẽ được tạo trước khi ghi.")
         }
     }
 
@@ -107,6 +125,38 @@ struct GestaltView: View {
         } footer: {
             Text("Gestalt chỉ chạy trên iOS 26.0 – 27.2.1. Từ iOS 27.3 Beta 2 Apple đã vá "
                  + "worse_query nên tính năng bị vô hiệu hoá hoàn toàn.")
+                .font(.caption2)
+        }
+    }
+
+    private var presetsSection: some View {
+        Section {
+            ForEach(GestaltManager.Preset.allCases) { preset in
+                Toggle(isOn: Binding(
+                    get: { presetStates[preset] ?? false },
+                    set: { pendingPreset = (preset, $0) }
+                )) {
+                    HStack(spacing: 10) {
+                        Image(systemName: preset.systemImage)
+                            .foregroundStyle(.accentColor)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(preset.title)
+                                .font(.subheadline.weight(.medium))
+                            Text(preset.detail)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .disabled(!isWriteAllowed)
+            }
+        } header: {
+            Text("Preset nhanh")
+        } footer: {
+            Text(isWriteAllowed
+                 ? "Mỗi toggle tạo snapshot write-ahead trước khi ghi. Nếu backup lỗi, lệnh ghi bị huỷ."
+                 : "Chỉ đọc — không đủ điều kiện ghi trên thiết bị này.")
                 .font(.caption2)
         }
     }
@@ -247,8 +297,21 @@ struct GestaltView: View {
             return
         }
         cachePath = url.path
+        presetStates = manager.presetStates()
         do {
             parameters = try manager.readableParameters()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Gọi preset manager — snapshot bắt buộc nằm trong `GestaltManager.apply`.
+    private func apply(preset: GestaltManager.Preset, enabled: Bool) {
+        do {
+            let snapshot = try GestaltManager.shared.apply(preset: preset, enabled: enabled)
+            statusMessage = "Đã \(enabled ? "bật" : "tắt") \(preset.title).\nSnapshot: "
+                + URL(fileURLWithPath: snapshot.originalPath).lastPathComponent
+            reload()
         } catch {
             errorMessage = error.localizedDescription
         }
