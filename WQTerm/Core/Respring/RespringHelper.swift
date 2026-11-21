@@ -24,7 +24,8 @@ enum RespringMethod: String, CaseIterable {
 /// 2. WebView tải HTML với ~360 lớp `backdrop-filter: blur(100px)` → GPU process
 ///    của WebKit quá tải → hệ thống kill và khởi động lại SpringBoard.
 /// 3. Nếu sau `timeout` vẫn chưa respring (không khả thi), tự động thử lại qua
-///    Diagnostics Relay trên tunnel `10.7.0.1`.
+///    Diagnostics Relay trên địa chỉ tunnel (không hardcode IP — đọc từ
+///    `TunnelConfiguration.effectiveAddress`).
 final class RespringHelper {
     static let shared = RespringHelper()
 

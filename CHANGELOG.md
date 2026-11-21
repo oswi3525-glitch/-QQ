@@ -1,5 +1,64 @@
 # WQTerm — CHANGELOG
 
+## [Phase 1] — Network & Pairing repair
+
+### Root cause
+`10.7.0.1` là **giá trị hardcode** trong `TunnelConfiguration.defaultAddress`, được dùng làm
+điều kiện *duy nhất* để kết luận "LocalDevVPN sẵn sàng". Thiết bị chỉ có
+`ipsec4/5 = 28.215.155.104` và `utun4 = 10.7.1.1` ⇒ `isLocalDevVPNActive` luôn false ⇒
+`beginPairing()` return false ⇒ `startHost()` không chạy ⇒ không listener, không Bonjour
+("chưa gọi startHost()", "TCP listener: STOPPED"). Bốn triệu chứng, một nguyên nhân.
+
+Kiến trúc xác nhận: repo **không có** Network Extension target nào
+(`NEPacketTunnelProvider`, `NETunnelProviderManager`, `NEPacketTunnelNetworkSettings`,
+`NEIPv4Settings` đều vắng mặt; `project.yml` chỉ có target app; entitlements không có
+`packet-tunnel-provider`). WQTerm là **client** của tunnel do app khác tạo.
+
+### Tunnel / LocalDevVPN
+- `TunnelConfiguration`: tách `preferredAddress` (mong đợi, mặc định `10.7.0.1`) và
+  `confirmedAddress` (thực tế, do người dùng xác nhận). Không tự đổi IP.
+- `TunnelLogic.swift`: `TunnelResolver` thuần logic. Chỉ nhận địa chỉ trên interface
+  tunnel point-to-point `UP`+`RUNNING` là IPv4 **riêng** (RFC1918/CGNAT). `127.0.0.1`,
+  `169.254/16`, `0.0.0.0`, và `ipsec*` mang địa chỉ công khai bị loại **kèm lý do**.
+- `NetworkUtils`: đọc đầy đủ `ifaddrs` flags + peer + netmask (trước đây chỉ so chuỗi địa
+  chỉ). `TunnelInfo` có `resolution`, `topologyDetail`, `hasPendingCandidates`.
+- Không bind mù: listener chỉ bind sau khi xác nhận địa chỉ còn trên tunnel UP+RUNNING.
+
+### Listener
+- Mới `TunnelListenerManager` + `ListenerStateMachine`:
+  `STOPPED → INITIALIZING → WAITING_FOR_TUNNEL → VALIDATING_ADDRESS → STARTING_LISTENER →
+  LISTENING → ACCEPTING_CONNECTIONS`, nhánh `FAILED`/`RECOVERING`/`STOPPING`.
+- `.listening` chỉ sau `NWListener.State.ready`. `.waiting` map thành lỗi có mã
+  (`E_ADDRNOTAVAIL`, `E_ADDRINUSE`, `E_ACCES`) + timeout 6s thay vì treo vĩnh viễn.
+- Retry tối đa 3, backoff tuyến tính, `generation` chặn callback cũ, luôn `cancel()` trước
+  khi bỏ tham chiếu, `currentListener` chỉ trả khi ready.
+
+### Bonjour
+- Mới `BonjourAdvertiser`: `attach()` từ chối khi listener chưa `.ready`/port = 0.
+  `detach()` ở mọi nhánh dừng/restart. `verifyDiscovery()` browse thật, không giả định
+  multicast đi xuyên VPN. TXT record giữ `identifier`/`authTag` (tương thích bản cũ) kèm
+  cảnh báo IRK bị quảng bá công khai.
+
+### Pairing handshake
+- Mới `PairingHandshake` + `SHA256` (thuần Swift, có vector kiểm thử): framing
+  `[UInt32 length][payload]`, host gửi `challenge` → thiết bị `hello` → `response` HMAC-SHA256
+  → so sánh constant-time. **Chỉ HMAC khớp mới** `handshakeVerified`.
+- Mỗi connection một `HandshakeSession`; lỗi ⇒ `cancel` + xoá ngay (tránh
+  `-65569 DefunctConnection`). `sessions` bảo vệ bằng `NSLock`.
+
+### Chẩn đoán
+- 7 bước hiển thị PASS/FAIL/**SKIPPED**, nguyên nhân, **mã lỗi**, **thời gian**, **hướng khắc
+  phục**; phân biệt VPN connected / tunnel configured / reachable / listener ready /
+  Bonjour published / host discovered / pairing authenticated.
+- UI có nút "Dùng địa chỉ này" cho từng ứng viên (xác nhận tường minh) và nút bỏ xác nhận.
+
+### Kiểm thử
+- `Tests/PairingCoreTests` (36 test) + `scripts/test-core.sh` chạy được trên Linux CI.
+- Chưa chạy được `xcodebuild`/thiết bị thật trong môi trường này — xem
+  `WQTerm/Core/Network/README-NETWORK.md` mục 8.
+
+
+
 ## [Unreleased] — Reliability overhaul
 - MobileGestalt: sửa triệt để lỗi `errno 1` (EPERM). Phân biệt read/write/permission/verification/rollback; probe quyền ghi trước khi backup; file tạm chỉ tạo sau preflight; fsync/close kiểm tra; đọc lại so sánh sau ghi; rollback tự động; xoá snapshot rác; không báo thành công giả.
 - WorseQuery: thay signature private API sai (1 tham số) bằng `SandboxAccess.grantReadWrite` (3 tham số đúng), không báo mount thành công khi không có extension.

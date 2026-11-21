@@ -79,17 +79,17 @@ struct PairingJITView: View {
             statusRow(title: "Listener",
                       ok: pairing.advertisedPort != nil,
                       text: pairing.advertisedPort.map { "port \($0)" } ?? "chưa mở",
-                      detail: "state \(pairing.state.rawValue)")
+                      detail: "listener \(pairing.listenerState.rawValue) · host \(pairing.state.rawValue)")
 
             statusRow(title: "Bonjour",
                       ok: pairing.isAdvertising,
                       text: pairing.isAdvertising ? "Đang quảng bá" : "Chưa quảng bá",
-                      detail: PairingManager.serviceType)
+                      detail: "\(PairingManager.serviceType) · discovery \(pairing.bonjourDiscovered ? "thấy" : "chưa thấy")")
 
             statusRow(title: "Pairing",
                       ok: pairing.handshakeVerified,
                       text: pairing.handshakeVerified ? "Handshake hợp lệ" : "Chưa xác thực",
-                      detail: "PIN đã nhập: \(pairing.pinConfirmed ? "có" : "chưa")")
+                      detail: "handshake \(pairing.handshakeState.rawValue) · PIN đã nhập: \(pairing.pinConfirmed ? "có" : "chưa")")
 
             if let status = pairing.statusMessage {
                 Text(status).font(.caption).foregroundStyle(.secondary)
@@ -156,23 +156,69 @@ struct PairingJITView: View {
             .disabled(pairing.isRunningDiagnostics)
 
             ForEach(pairing.diagnostics) { step in
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: icon(for: step.status))
-                        .foregroundStyle(color(for: step.status))
-                        .frame(width: 18)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(step.title).font(.caption.bold())
-                        Text(step.detail).font(.caption2).foregroundStyle(.secondary)
-                        if let error = step.errorText {
-                            Text(error).font(.caption2).foregroundStyle(.red)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: icon(for: step.status))
+                            .foregroundStyle(color(for: step.status))
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(step.title).font(.caption.bold())
+                                Text(step.status.rawValue.uppercased())
+                                    .font(.caption2.bold().monospaced())
+                                    .foregroundStyle(color(for: step.status))
+                                if let duration = step.duration {
+                                    Spacer()
+                                    Text(String(format: "%.2fs", duration))
+                                        .font(.caption2.monospaced())
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Text(step.detail)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let code = step.errorCode {
+                                Text("Mã: \(code)")
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                            if let error = step.errorText {
+                                Text(error)
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            if let recovery = step.recovery {
+                                Label(recovery, systemImage: "wrench.and.screwdriver")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
+                    }
+                }
+            }
+
+            // Địa chỉ tunnel thực tế khác cấu hình: chỉ bind sau khi người dùng xác nhận.
+            if !pairing.tunnelCandidates.isEmpty {
+                ForEach(pairing.tunnelCandidates, id: \.summary) { candidate in
+                    Button {
+                        pairing.adoptCandidate(candidate)
+                        message = "Đã xác nhận \(candidate.summary)."
+                    } label: {
+                        Label("Dùng địa chỉ này: \(candidate.summary)",
+                              systemImage: "checkmark.seal")
                     }
                 }
             }
         } header: {
             Text("Chẩn đoán")
         } footer: {
-            Text("Lần lượt: VPN · địa chỉ tunnel · route · TCP listener · Bonjour · discovery · kết nối pairing.")
+            Text("PASS / FAIL / SKIPPED cho từng bước: VPN · địa chỉ tunnel · route · "
+                 + "TCP listener · Bonjour · discovery · handshake. Mỗi bước có mã lỗi và "
+                 + "hướng khắc phục. Ứng viên địa chỉ chỉ được dùng sau khi bạn xác nhận.")
                 .font(.caption2)
         }
     }
@@ -200,12 +246,24 @@ struct PairingJITView: View {
 
     private var vpnSection: some View {
         Section {
-            LabeledContent("Địa chỉ tunnel", value: pairing.tunnelAddressLabel)
+            LabeledContent("Địa chỉ mong đợi", value: TunnelConfiguration.shared.preferredAddress)
+            LabeledContent("Địa chỉ đang dùng", value: pairing.tunnelAddressLabel)
+            if let confirmed = TunnelConfiguration.shared.confirmedAddress {
+                LabeledContent("Đã xác nhận", value: confirmed)
+                Button(role: .destructive) {
+                    TunnelConfiguration.shared.clearConfirmedAddress()
+                    pairing.stopHost(reason: "Bo xac nhan dia chi tunnel")
+                    message = "Đã bỏ xác nhận địa chỉ tunnel."
+                } label: {
+                    Label("Bỏ xác nhận địa chỉ", systemImage: "arrow.uturn.backward")
+                }
+            }
             LabeledContent("Port listener", value: pairing.listenerPortLabel)
             LabeledContent("Interface", value: tunnel.info.matchedInterfaces.isEmpty
                            ? "—" : tunnel.info.matchedInterfaces.joined(separator: ", "))
+            LabeledContent("Tunnel thấy được", value: tunnel.topology.tunnelDetail)
             Button {
-                configAddress = TunnelConfiguration.shared.tunnelAddress
+                configAddress = TunnelConfiguration.shared.preferredAddress
                 configListenerPort = String(TunnelConfiguration.shared.listenerPort)
                 configRelayPort = String(TunnelConfiguration.shared.relayPort)
                 configMessage = nil
@@ -216,8 +274,9 @@ struct PairingJITView: View {
         } header: {
             Text("LocalDevVPN")
         } footer: {
-            Text("Chỉ địa chỉ nằm trên interface tunnel mới được tính. "
-                 + "127.0.0.1 / lo0 không phải LocalDevVPN.")
+            Text("Chỉ địa chỉ nằm trên interface tunnel point-to-point mới được tính. "
+                 + "127.0.0.1 / lo0 và ipsec*/utun* mang địa chỉ công khai không phải LocalDevVPN. "
+                 + "Địa chỉ thực tế khác cấu hình sẽ chỉ được dùng sau khi bạn xác nhận.")
                 .font(.caption2)
         }
     }
@@ -392,7 +451,7 @@ struct PairingJITView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("10.7.0.1", text: $configAddress)
+                    TextField(TunnelConfiguration.defaultAddress, text: $configAddress)
                         .keyboardType(.numbersAndPunctuation)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -403,8 +462,9 @@ struct PairingJITView: View {
                 } header: {
                     Text("Thông số tunnel")
                 } footer: {
-                    Text("Giá trị này là nguồn cấu hình duy nhất cho listener, relay và pairing. "
-                         + "Đổi xong nên bật lại Pairing Host.")
+                    Text("Địa chỉ này là giá trị MONG ĐỢI, không phải bằng chứng tunnel tồn tại. "
+                         + "Nếu tunnel thực tế có địa chỉ khác, app sẽ đề xuất trong Kiểm tra "
+                         + "kết nối và chỉ dùng sau khi bạn xác nhận.")
                         .font(.caption2)
                 }
                 if let configMessage {
@@ -441,6 +501,7 @@ struct PairingJITView: View {
         let listener = UInt16(configListenerPort.trimmingCharacters(in: .whitespaces)) ?? 0
         let relay = UInt16(configRelayPort.trimmingCharacters(in: .whitespaces))
             ?? TunnelConfiguration.defaultRelayPort
+        // Đổi địa chỉ mong đợi ⇒ xác nhận cũ bị xoá (xem TunnelConfiguration.update).
         if let error = TunnelConfiguration.shared.update(address: configAddress,
                                                          listenerPort: listener,
                                                          relayPort: relay) {
@@ -449,6 +510,7 @@ struct PairingJITView: View {
         }
         configMessage = "Đã lưu. \(TunnelConfiguration.shared.summary)"
         pairing.stopHost(reason: "Đổi cấu hình tunnel")
+        pairing.requestLocalNetworkPermissionOnce()
     }
 
     // MARK: - Actions

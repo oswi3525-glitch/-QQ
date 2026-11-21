@@ -160,6 +160,8 @@ struct LockPlaceholderView: View {
 /// Cảnh báo pháp lý hiển thị lần đầu mở app.
 struct OnboardingView: View {
     let onAgree: () -> Void
+    /// Dùng monitor (cache 3s, tự cập nhật) thay vì gọi `getifaddrs` mỗi lần render.
+    @ObservedObject private var tunnel = TunnelMonitor.shared
 
     var body: some View {
         ScrollView {
@@ -205,14 +207,14 @@ struct OnboardingView: View {
                     }
 
                     HStack(spacing: 8) {
-                        Image(systemName: NetworkUtils.isLocalDevVPNActive
+                        Image(systemName: tunnel.isReady
                               ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
-                        Text(NetworkUtils.isLocalDevVPNActive
+                        Text(tunnel.isReady
                              ? "LocalDevVPN đã sẵn sàng"
                              : PairingManager.vpnWarning)
                     }
                     .font(.caption)
-                    .foregroundStyle(NetworkUtils.isLocalDevVPNActive ? .green : .orange)
+                    .foregroundStyle(tunnel.isReady ? .green : .orange)
                     .padding(10)
                     .liquidGlass(cornerRadius: 12)
                 }
