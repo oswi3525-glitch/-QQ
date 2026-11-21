@@ -30,7 +30,7 @@ WQTerm/
 │   │   ├── Preview/                     # PreviewContainerView, renderers
 │   │   ├── Settings/                    # SettingsView, SecuritySettings, PairingSettings, JITSettings
 │   │   └── Components/                  # WarningBanner, TwoStepConfirmDialog, BlurSensitiveView
-│   ├── Resources/                       # ios_system, node-ios-arm64, node_modules, Recipes
+│   ├── Resources/                       # ios_system, toolchain, python-runtime, Recipes
 │   ├── Info.plist
 │   ├── WQTerm.entitlements              # App Group group.com.wqterm.app
 │   └── Localizable.strings              # Tiếng Việt

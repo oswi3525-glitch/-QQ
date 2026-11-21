@@ -113,6 +113,55 @@ final class ShellSession: ObservableObject {
         }
     }
 
+    /// Chạy một script nhiều dòng (do AI Agent trả về) theo tuần tự.
+    ///
+    /// Mỗi dòng là một lệnh độc lập; dừng ngay nếu một dòng thất bại để tránh
+    /// thực thi phần còn lại khi người dùng chỉ đồng ý với ngữ cảnh ban đầu.
+    func runScriptInBackground(_ script: String,
+                               completion: ((Int32) -> Void)? = nil) {
+        let lines = script.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        guard !lines.isEmpty else {
+            completion?(0)
+            return
+        }
+        guard !isRunning else { return }
+
+        append(.command, "\(promptText) \(lines.joined(separator: " ; "))")
+        history.append(lines.joined(separator: " ; "))
+        historyCursor = nil
+        isRunning = true
+
+        let directory = currentDirectory
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var cwd = directory
+            var lastStatus: Int32 = 0
+            var chunks: [String] = []
+
+            for line in lines {
+                let result = CommandRunner.run(line, cwd: cwd)
+                cwd = result.cwd
+                lastStatus = result.status
+                if !result.output.isEmpty { chunks.append(result.output) }
+                if result.status != 0 { break }
+            }
+
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.currentDirectory = cwd
+                if !chunks.isEmpty {
+                    self.append(lastStatus == 0 ? .output : .error,
+                                chunks.joined(separator: "\n"))
+                } else if lastStatus != 0 {
+                    self.append(.error, "Lệnh thoát với mã \(lastStatus)")
+                }
+                self.isRunning = false
+                completion?(lastStatus)
+            }
+        }
+    }
+
     /// Gửi tín hiệu ngắt (Ctrl+C) tới phiên hiện tại.
     func sendInterrupt() {
         append(.info, "^C")

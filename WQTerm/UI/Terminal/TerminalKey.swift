@@ -65,7 +65,8 @@ enum TerminalKey {
             Item("COPY", ""),
             Item("PASTE", ""),
             Item("SELECT ALL", ""),
-            Item("CLEAR", "")
+            Item("CLEAR", ""),
+            Item("ẨN", "")
         ]
     ]
 

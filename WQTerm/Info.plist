@@ -35,10 +35,11 @@
     <key>NSFaceIDUsageDescription</key>
     <string>Khóa WQTerm bằng Face ID</string>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Kiểm tra kết nối mạng (ping, curl)</string>
+    <string>WQTerm cần quyền mạng nội bộ để quảng bá dịch vụ ghép nối (pairing) với iPhone và để kiểm tra kết nối mạng (ping, curl).</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_remotepairing-pairable-host._tcp</string>
+        <string>_remotepairing._tcp</string>
     </array>
     <key>UIRequiredDeviceCapabilities</key>
     <array>

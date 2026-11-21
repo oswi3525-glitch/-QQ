@@ -40,6 +40,8 @@ struct FilePreviewView: View {
             TextPreviewView(url: file.url, browser: browser)
         case .hex:
             HexPreviewView(url: file.url)
+        case .asset3105:
+            Asset3105PreviewView(url: file.url)
         }
     }
 }

@@ -22,6 +22,14 @@ struct TerminalView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isFocused = false
+                    } label: {
+                        Label("Ẩn bàn phím", systemImage: "keyboard.chevron.compact.down")
+                    }
+                    .disabled(!isFocused)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) {
                         session.clearHistory()
                     } label: {

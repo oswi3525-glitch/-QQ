@@ -49,6 +49,8 @@ enum FileContextExtractor {
             output.append("Đây là file ảnh; nội dung nhị phân không gửi kèm.")
         case .hex:
             output.append(contentsOf: hexSummary(url: url, limit: min(limit, 2048)))
+        case .asset3105:
+            output.append(contentsOf: asset3105Summary(url: url, limit: limit))
         }
 
         return output.joined(separator: "\n")
@@ -87,6 +89,46 @@ enum FileContextExtractor {
         for entry in entries.prefix(40) {
             let suffix = entry.isDirectory ? "/" : " (\(BuiltinShell.sizeLabel(entry.uncompressedSize)))"
             lines.append("  \(entry.name)\(suffix)")
+        }
+        return lines
+    }
+
+    /// File `.3105`: mô tả loại phát hiện được, liệt kê ZIP hoặc trích text/hex.
+    private static func asset3105Summary(url: URL, limit: Int) -> [String] {
+        let inspection = Asset3105Probe.inspect(url: url)
+        var lines: [String] = [
+            "Magic bytes: \(inspection.magic)",
+            "Loại phát hiện: \(inspection.kind.label)",
+            "Kích thước: \(BuiltinShell.sizeLabel(inspection.fileSize))"
+        ]
+        if inspection.zipOffset > 0 {
+            lines.append("Có header \(inspection.zipOffset) byte trước dữ liệu ZIP.")
+        }
+        switch inspection.kind {
+        case .zip:
+            lines.append("ZIP có \(inspection.entryCount) entry, "
+                         + "tổng \(BuiltinShell.sizeLabel(inspection.unpackedSize)) sau giải nén.")
+            for entry in inspection.entries.prefix(40) {
+                let suffix = entry.isDirectory
+                    ? "/"
+                    : " (\(BuiltinShell.sizeLabel(entry.uncompressedSize)))"
+                lines.append("  \(entry.name)\(suffix)")
+            }
+        case .text, .plist:
+            if let text = inspection.textPreview {
+                lines.append("Nội dung (tối đa \(limit) byte):")
+                lines.append("```")
+                lines.append(String(text.prefix(limit)))
+                lines.append("```")
+            }
+        case .image:
+            lines.append("Đây là file ảnh; không gửi nội dung nhị phân.")
+        case .sqlite:
+            lines.append(contentsOf: sqliteSummary(url: url))
+        case .pdf:
+            lines.append("Đây là PDF; chỉ gửi metadata.")
+        case .unknown:
+            lines.append(contentsOf: hexSummary(url: url, limit: min(limit, 2048)))
         }
         return lines
     }

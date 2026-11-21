@@ -13,6 +13,8 @@ final class TerminalInputField: UITextField, UITextFieldDelegate {
     var onClearScreen: (() -> Void)?
     var onCopyTranscript: (() -> String)?
     var onControlSequence: ((String) -> Void)?
+    /// Báo SwiftUI khi focus đổi (dùng cho nút ẩn bàn phím).
+    var onFocusChanged: ((Bool) -> Void)?
 
     private let accessory = TerminalAccessoryView()
 
@@ -54,7 +56,18 @@ final class TerminalInputField: UITextField, UITextFieldDelegate {
             self, selector: #selector(handleTextChange),
             name: UITextField.textDidChangeNotification, object: self
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleBeginEditing),
+            name: UITextField.textDidBeginEditingNotification, object: self
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleEndEditing),
+            name: UITextField.textDidEndEditingNotification, object: self
+        )
     }
+
+    @objc private func handleBeginEditing() { onFocusChanged?(true) }
+    @objc private func handleEndEditing() { onFocusChanged?(false) }
 
     @objc private func handleTextChange() {
         // Chỉ giữ 1 dòng để prompt không bị vỡ layout.
@@ -218,6 +231,10 @@ final class TerminalInputField: UITextField, UITextFieldDelegate {
             text = ""
             onClearScreen?()
 
+        case "ẨN":
+            resignFirstResponder()
+            onFocusChanged?(false)
+
         default:
             break
         }
@@ -231,7 +248,10 @@ struct TerminalInputRepresentable: UIViewRepresentable {
 
     func makeUIView(context: Context) -> TerminalInputField {
         let field = TerminalInputField()
-        field.configure(prompt: "\(session.promptText) nhập lệnh…")
+        // Prompt đã hiển thị riêng trong TerminalView; placeholder chỉ là gợi ý
+        // để tránh lặp "Documents $ Documents $ ..." trên cùng một dòng.
+        field.configure(prompt: "nhập lệnh…")
+        field.onFocusChanged = { focused in isFocused = focused }
         field.onSubmit = { command in session.runInBackground(command) }
         field.onHistoryUp = { session.previousCommand() }
         field.onHistoryDown = { session.nextCommand() }
@@ -243,8 +263,8 @@ struct TerminalInputRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: TerminalInputField, context: Context) {
-        // Đồng bộ prompt khi thư mục làm việc thay đổi (cd ...).
-        uiView.updatePrompt("\(session.promptText) nhập lệnh…")
+        // Prompt động do TerminalView vẽ; placeholder giữ cố định để không lặp.
+        uiView.updatePrompt("nhập lệnh…")
         if isFocused, !uiView.isFirstResponder {
             uiView.becomeFirstResponder()
         } else if !isFocused, uiView.isFirstResponder {

@@ -6,10 +6,13 @@ import SwiftUI
 /// spinner. Prompt được gửi trên Task nên UI không bị chặn.
 struct ChatView: View {
     @ObservedObject private var ai = AIService.shared
+    @EnvironmentObject private var tabSelection: TabSelection
 
     @State private var draft = ""
     @FocusState private var inputFocused: Bool
     @State private var errorMessage: String?
+    /// Lệnh Terminal do AI trả về, đang chờ người dùng xác nhận.
+    @State private var pendingCommand: AICommand?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,6 +52,17 @@ struct ChatView: View {
                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
+        }
+        .alert(item: $pendingCommand) { command in
+            let primary: Alert.Button = command.isDangerous
+                ? .destructive(Text("Chạy"), action: { run(command) })
+                : .default(Text("Chạy"), action: { run(command) })
+            return Alert(
+                title: Text("⚠️ AI muốn chạy lệnh này"),
+                message: Text(alertMessage(for: command)),
+                primaryButton: primary,
+                secondaryButton: .cancel(Text("Hủy"))
+            )
         }
     }
 
@@ -174,12 +188,38 @@ struct ChatView: View {
 
         Task {
             do {
-                try await ai.send(prompt)
+                let reply = try await ai.send(prompt)
+                if let command = AICommandExtractor.firstCommand(in: reply) {
+                    await MainActor.run {
+                        pendingCommand = command
+                    }
+                }
             } catch {
                 // Tin nhắn lỗi đã được chèn vào hội thoại; alert chỉ báo thêm.
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    /// Nội dung Alert: hiện lệnh + lý do nguy hiểm (nếu có).
+    private func alertMessage(for command: AICommand) -> String {
+        var parts: [String] = []
+        if command.isDangerous {
+            parts.append("CẢNH BÁO: lệnh này có thể gây mất dữ liệu.")
+            parts.append(command.dangerReasons.map { "• \($0)" }.joined(separator: "\n"))
+            parts.append("")
+        }
+        parts.append(command.summary)
+        parts.append("")
+        parts.append("Lệnh sẽ được đẩy vào tab Terminal để thực thi.")
+        return parts.joined(separator: "\n")
+    }
+
+    /// Người dùng đã đồng ý — đẩy lệnh vào Terminal.
+    private func run(_ command: AICommand) {
+        pendingCommand = nil
+        ShellSession.shared.runScriptInBackground(command.command)
+        tabSelection.select(.terminal)
     }
 }
 

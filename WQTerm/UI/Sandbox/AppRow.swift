@@ -33,6 +33,21 @@ struct AppRow: View {
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+
+                HStack(spacing: 4) {
+                    Image(systemName: "internaldrive")
+                        .font(.system(size: 9))
+                    Text("Data: \(app.dataSizeLabel)")
+                        .lineLimit(1)
+                    if let path = app.dataContainerURL?.lastPathComponent {
+                        Text("•")
+                        Text(path)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                .font(.caption2.monospaced())
+                .foregroundStyle(.tertiary)
             }
 
             Spacer(minLength: 8)

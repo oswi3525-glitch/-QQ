@@ -31,7 +31,6 @@ enum CommandRunner {
     static let shellSearchDirectories = [
         "Resources/toolchain",
         "Resources/ios_system",
-        "Resources/node_modules/.bin",
         "Frameworks"
     ]
 

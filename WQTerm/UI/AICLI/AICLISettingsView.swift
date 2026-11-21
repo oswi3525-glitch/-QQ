@@ -3,6 +3,7 @@ import SwiftUI
 /// Tab AI & Runtimes (M4/M9): cấu hình API key, endpoint và trạng thái runtime.
 struct AICLISettingsView: View {
     @StateObject private var store = AIProviderStore.shared
+    @StateObject private var ai = AIService.shared
     @StateObject private var runtimes = RuntimeManager.shared
 
     @State private var editingProvider: AIProvider?
@@ -69,26 +70,27 @@ struct AICLISettingsView: View {
 
     private var endpointSection: some View {
         Section {
-            TextField("https://literouter.fun/v1", text: $baseURLDraft)
+            TextField("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                      text: $baseURLDraft)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.URL)
                 .onSubmit { saveBaseURL() }
 
             Button("Lưu endpoint") { saveBaseURL() }
-                .disabled(baseURLDraft == store.baseURL)
+                .disabled(baseURLDraft == ai.endpoint)
         } header: {
             Text("Endpoint tuỳ chỉnh")
         } footer: {
-            Text("Mặc định: \(AIProviderStore.defaultBaseURL) (LiteRouter). "
-                 + "Đổi sang gateway tương thích OpenAI/Anthropic nếu cần.")
+            Text("Mặc định: Gemini OpenAI-compatible. "
+                 + "Đổi sang LiteRouter hoặc gateway tương thích OpenAI nếu cần.")
         }
-        .onAppear { baseURLDraft = store.baseURL }
+        .onAppear { baseURLDraft = ai.endpoint }
     }
 
     private var runtimesSection: some View {
         Section {
-            runtimeRow(.node, available: runtimes.availableRuntimes[.node] ?? false)
+            // Node.js đã được lược bỏ khỏi bundle để giảm dung lượng.
             runtimeRow(.python, available: runtimes.availableRuntimes[.python] ?? false)
 
             if let progress = runtimes.installProgress {
@@ -115,7 +117,7 @@ struct AICLISettingsView: View {
             Text("Runtime nhúng")
         } footer: {
             Text("Runtime được copy từ app bundle sang Documents/.terminal/RuntimeManager/ "
-                 + "và cấp quyền thực thi. Thiếu runtime thì CLI bằng Node/Python không chạy được.")
+                 + "và cấp quyền thực thi. Node.js không còn nhúng; chat AI native dùng endpoint HTTP.")
         }
     }
 
@@ -165,10 +167,10 @@ struct AICLISettingsView: View {
         }
     }
 
-    /// Lưu endpoint tuỳ chỉnh (mặc định LiteRouter).
+    /// Lưu endpoint tuỳ chỉnh (mặc định Gemini OpenAI-compatible).
     private func saveBaseURL() {
-        store.saveBaseURL(baseURLDraft)
-        baseURLDraft = store.baseURL
-        message = "Đã lưu endpoint: \(store.baseURL)"
+        ai.saveEndpoint(baseURLDraft)
+        baseURLDraft = ai.endpoint
+        message = "Đã lưu endpoint: \(ai.endpoint)"
     }
 }

@@ -21,8 +21,6 @@ let package = Package(
             ],
             resources: [
                 .copy("Resources/ios_system"),
-                .copy("Resources/node-ios-arm64"),
-                .copy("Resources/node_modules"),
                 .copy("Resources/Recipes")
             ]
         )

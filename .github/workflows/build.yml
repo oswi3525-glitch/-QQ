@@ -80,7 +80,6 @@ jobs:
           test -f "$APP/Assets.car" && echo "ok: Assets.car"
           test -d "$APP/toolchain" && echo "ok: toolchain frameworks" || echo "warn: toolchain missing"
           test -d "$APP/Scripts" && echo "ok: ai.py script" || echo "warn: Scripts missing"
-          test -d "$APP/node-ios-arm64" && echo "ok: node runtime" || true
           test -d "$APP/python-runtime/python3_ios.framework" && echo "ok: python runtime (CPython engine)" || echo "warn: python runtime missing"
           test -d "$APP/python-runtime/Library/lib/python3.9" && echo "ok: python stdlib" || echo "warn: python stdlib missing"
           /usr/libexec/PlistBuddy -c "Print :UILaunchScreen" "$APP/Info.plist" >/dev/null && echo "ok: UILaunchScreen present"

@@ -13,9 +13,11 @@ final class AIService: ObservableObject {
     static let shared = AIService()
 
     /// Model mặc định theo yêu cầu dự án.
-    static let defaultModel = "deepseek-v4.1-flash-1017"
-    /// Endpoint mặc định (khác `AIProviderStore.defaultBaseURL` — đây là URL đầy đủ).
-    static let defaultEndpoint = "https://literouter.fun/api/v1/chat/completions"
+    static let defaultModel = "gemini-3-flash-preview"
+    /// Endpoint mặc định: Gemini OpenAI-compatible (hỗ trợ `Authorization: Bearer`).
+    ///
+    /// Có thể đổi sang LiteRouter hoặc gateway tương thích OpenAI khác trong tab AI.
+    static let defaultEndpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
     /// Toàn bộ hội thoại hiện tại, chia sẻ giữa tab AI và nút "Ask AI" trong viewer.
     @Published var messages: [ChatMessage] = []
@@ -57,18 +59,39 @@ final class AIService: ObservableObject {
         defaults.set(model, forKey: modelKey)
     }
 
-    /// API key đang dùng để gọi LiteRouter.
+    /// API key đang dùng để gọi AI.
     ///
-    /// Ưu tiên key của provider "codex" (OpenAI-compatible) vì LiteRouter dùng
-    /// chuẩn đó; nếu trống thì thử lần lượt các provider còn lại.
+    /// Ưu tiên key Gemini (mặc định của tab AI); nếu trống thì thử lần lượt
+    /// các provider còn lại để tương thích cấu hình cũ.
     var apiKey: String? {
-        for provider in [AIProvider.codex, .gemini, .claude] {
+        for provider in [AIProvider.gemini, .codex, .claude] {
             if let value = try? store.key(provider), !value.isEmpty { return value }
         }
         return nil
     }
 
     var hasAPIKey: Bool { apiKey != nil }
+
+    /// Lưu API key vào Keychain (provider Gemini — mặc định của tab AI).
+    func saveAPIKey(_ value: String) throws {
+        try store.saveKey(value, for: .gemini)
+    }
+
+    /// Xoá API key Gemini khỏi Keychain.
+    func deleteAPIKey() throws {
+        try store.deleteKey(for: .gemini)
+    }
+
+    /// Kiểm tra API key + model bằng một request tối thiểu.
+    ///
+    /// Không đụng tới lịch sử chat. Ném lỗi có mô tả rõ ràng để UI hiển thị.
+    func validateConnection() async throws {
+        guard let key = apiKey else { throw AIServiceError.missingAPIKey }
+        _ = try await requestCompletion(prompt: "ping",
+                                        apiKey: key,
+                                        useHistory: false,
+                                        maxTokens: 8)
+    }
 
     // MARK: - Hội thoại
 
@@ -114,10 +137,24 @@ final class AIService: ObservableObject {
 
     // MARK: - Gọi API
 
-    /// Thực hiện POST tới endpoint tương thích OpenAI.
-    func requestCompletion(prompt: String, apiKey: String) async throws -> String {
+    /// Thực hiện POST tới endpoint tương thích OpenAI (hoặc Gemini native).
+    ///
+    /// - Parameters:
+    ///   - useHistory: gửi kèm lịch sử chat (tắt khi validate key).
+    ///   - maxTokens: giới hạn token cho request kiểm tra.
+    func requestCompletion(prompt: String,
+                           apiKey: String,
+                           useHistory: Bool = true,
+                           maxTokens: Int? = nil) async throws -> String {
         guard let url = URL(string: endpoint), url.scheme?.hasPrefix("http") == true else {
             throw AIServiceError.invalidEndpoint(endpoint)
+        }
+
+        if Self.isGeminiNativeEndpoint(url) {
+            return try await requestGeminiNative(prompt: prompt,
+                                                 apiKey: apiKey,
+                                                 useHistory: useHistory,
+                                                 maxTokens: maxTokens)
         }
 
         var request = URLRequest(url: url)
@@ -129,26 +166,91 @@ final class AIService: ObservableObject {
         var payloadMessages: [[String: String]] = [
             ["role": "system",
              "content": "Bạn là trợ lý kỹ thuật của WQTerm trên iOS. "
-                + "Trả lời ngắn gọn, chính xác, dùng Markdown khi hữu ích."]
+                + "Trả lời ngắn gọn, chính xác, dùng Markdown khi hữu ích. "
+                + "Khi đưa lệnh Terminal, bọc trong khối ```bash để người dùng xác nhận."]
         ]
-        // Gửi kèm tối đa 12 lượt gần nhất để giữ ngữ cảnh mà không phình token.
-        let history = messages
-            .filter { $0.role != .system && !$0.isStreaming && !$0.content.isEmpty }
-            .suffix(12)
-            .filter { $0.content != prompt }
-        for message in history {
-            payloadMessages.append(["role": message.role.rawValue, "content": message.content])
+        if useHistory {
+            // Gửi kèm tối đa 12 lượt gần nhất để giữ ngữ cảnh mà không phình token.
+            let history = messages
+                .filter { $0.role != .system && !$0.isStreaming && !$0.content.isEmpty }
+                .suffix(12)
+                .filter { $0.content != prompt }
+            for message in history {
+                payloadMessages.append(["role": message.role.rawValue, "content": message.content])
+            }
         }
         payloadMessages.append(["role": "user", "content": prompt])
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": model,
             "messages": payloadMessages,
             "temperature": 0.4,
             "stream": false
         ]
+        if let maxTokens { body["max_tokens"] = maxTokens }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
+        let data = try await perform(request)
+        return try Self.parseCompletion(data)
+    }
+
+    // MARK: - Gemini native
+
+    private static func isGeminiNativeEndpoint(_ url: URL) -> Bool {
+        let value = url.absoluteString.lowercased()
+        return value.contains("generativelanguage.googleapis.com") && !value.contains("/openai/")
+    }
+
+    /// Gọi Gemini API gốc (`models/{model}:generateContent`).
+    private func requestGeminiNative(prompt: String,
+                                     apiKey: String,
+                                     useHistory: Bool,
+                                     maxTokens: Int?) async throws -> String {
+        var base = endpoint
+        while base.hasSuffix("/") { base.removeLast() }
+        let urlString: String
+        if base.contains("/models") {
+            urlString = "\(base)/\(model):generateContent"
+        } else {
+            urlString = "\(base)/models/\(model):generateContent"
+        }
+        guard let url = URL(string: urlString) else {
+            throw AIServiceError.invalidEndpoint(urlString)
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
+        request.setValue("WQTerm/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
+
+        var contents: [[String: Any]] = []
+        if useHistory {
+            let history = messages
+                .filter { $0.role != .system && !$0.isStreaming && !$0.content.isEmpty }
+                .suffix(12)
+                .filter { $0.content != prompt }
+            for message in history {
+                let role = message.role == .assistant ? "model" : "user"
+                contents.append(["role": role, "parts": [["text": message.content]]])
+            }
+        }
+        contents.append(["role": "user", "parts": [["text": prompt]]])
+
+        var generationConfig: [String: Any] = ["temperature": 0.4]
+        if let maxTokens { generationConfig["maxOutputTokens"] = maxTokens }
+        let body: [String: Any] = [
+            "contents": contents,
+            "generationConfig": generationConfig
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let data = try await perform(request)
+        return try Self.parseGeminiCompletion(data)
+    }
+
+    /// Chạy request và chuẩn hoá lỗi HTTP/transport.
+    private func perform(_ request: URLRequest) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -156,13 +258,31 @@ final class AIService: ObservableObject {
         } catch {
             throw AIServiceError.transport(error.localizedDescription)
         }
-
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             let text = String(data: data, encoding: .utf8) ?? ""
             throw AIServiceError.http(status: http.statusCode, body: text)
         }
+        return data
+    }
 
-        return try Self.parseCompletion(data)
+    /// Phân tích response Gemini native: `candidates[0].content.parts[].text`.
+    static func parseGeminiCompletion(_ data: Data) throws -> String {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AIServiceError.decoding("response Gemini không phải JSON object")
+        }
+        if let error = json["error"] as? [String: Any],
+           let message = error["message"] as? String {
+            throw AIServiceError.http(status: 200, body: message)
+        }
+        guard let candidates = json["candidates"] as? [[String: Any]],
+              let first = candidates.first,
+              let content = first["content"] as? [String: Any],
+              let parts = content["parts"] as? [[String: Any]] else {
+            throw AIServiceError.decoding("thiếu 'candidates[0].content.parts'")
+        }
+        let text = parts.compactMap { $0["text"] as? String }.joined()
+        guard !text.isEmpty else { throw AIServiceError.emptyResponse }
+        return text
     }
 
     /// Phân tích response tương thích OpenAI: `choices[0].message.content`.

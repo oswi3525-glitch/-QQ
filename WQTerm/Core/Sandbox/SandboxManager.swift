@@ -138,26 +138,46 @@ final class SandboxManager: ObservableObject {
     /// Đọc Info.plist của bundle và dựng `InstalledApp`.
     func makeInstalledApp(bundleURL: URL,
                           dataContainers: [String: URL] = [:]) -> InstalledApp? {
+        // Đọc trực tiếp Info.plist trong bundle con. `Bundle(url:)` là fallback
+        // cho trường hợp file plist bị đọc qua symlink / quyền sandbox đặc biệt.
+        var info: [String: Any]?
         let infoURL = bundleURL.appendingPathComponent("Info.plist")
-        guard let data = try? Data(contentsOf: infoURL),
-              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-              let info = plist as? [String: Any],
+        SandboxAccess.grantRead(to: infoURL.path)
+        if let data = try? Data(contentsOf: infoURL),
+           let plist = try? PropertyListSerialization.propertyList(from: data,
+                                                                   options: [],
+                                                                   format: nil) {
+            info = plist as? [String: Any]
+        }
+        if info == nil, let bundle = Bundle(url: bundleURL) {
+            info = bundle.infoDictionary
+        }
+
+        guard let info,
               let bundleID = info["CFBundleIdentifier"] as? String,
               !bundleID.isEmpty else {
             return nil
         }
 
+        // CFBundleDisplayName là tên người dùng thấy trên Home Screen.
         let name = (info["CFBundleDisplayName"] as? String)
             ?? (info["CFBundleName"] as? String)
             ?? bundleURL.deletingPathExtension().lastPathComponent
+
+        let dataContainer = dataContainers[bundleID]
+        if let dataContainer {
+            SandboxAccess.grantRead(to: dataContainer.path)
+        }
+        let dataSize = dataContainer.map { FileSystem.directorySize($0) } ?? 0
 
         return InstalledApp(bundleID: bundleID,
                             name: name,
                             version: (info["CFBundleShortVersionString"] as? String) ?? "—",
                             build: (info["CFBundleVersion"] as? String) ?? "",
                             bundleURL: bundleURL,
-                            dataContainerURL: dataContainers[bundleID],
-                            iconURL: iconURL(in: bundleURL, info: info))
+                            dataContainerURL: dataContainer,
+                            iconURL: iconURL(in: bundleURL, info: info),
+                            dataSizeBytes: dataSize)
     }
 
     /// Map bundleID → data container, đọc metadata của mobile_container_manager.

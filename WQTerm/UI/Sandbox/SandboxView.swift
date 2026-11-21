@@ -14,6 +14,7 @@ struct SandboxView: View {
     @State private var shareURL: URL?
     @State private var progressMessage = ""
     @State private var errorMessage: String?
+    @State private var showCacheCleaner = false
 
     private var filteredApps: [InstalledApp] {
         let query = searchText.trimmingCharacters(in: .whitespaces)
@@ -52,6 +53,9 @@ struct SandboxView: View {
                     set: { if $0 == nil { shareURL = nil } }
                 )) { item in
                     ShareSheet(items: [item.url])
+                }
+                .sheet(isPresented: $showCacheCleaner) {
+                    CacheCleanerView()
                 }
                 .alert("Thông báo", isPresented: Binding(
                     get: { errorMessage != nil },
@@ -167,6 +171,12 @@ struct SandboxView: View {
                 } label: {
                     Label("Mount theo bundle ID", systemImage: "link.badge.plus")
                 }
+                Divider()
+                Button {
+                    showCacheCleaner = true
+                } label: {
+                    Label("Dọn cache…", systemImage: "trash")
+                }
             } label: {
                 Label("Tuỳ chọn", systemImage: "ellipsis.circle")
             }
@@ -212,7 +222,8 @@ struct AppDetailView: View {
                 LabeledContent("Tên", value: app.name)
                 LabeledContent("Bundle ID", value: app.bundleID)
                 LabeledContent("Phiên bản", value: app.versionLabel)
-                LabeledContent("Kích thước", value: BuiltinShell.sizeLabel(app.bundleSizeBytes))
+                LabeledContent("Kích thước bundle", value: BuiltinShell.sizeLabel(app.bundleSizeBytes))
+                LabeledContent("Dung lượng dữ liệu", value: app.dataSizeLabel)
             } header: {
                 Text("Thông tin")
             }
@@ -222,9 +233,18 @@ struct AppDetailView: View {
                     .font(.caption2.monospaced())
                     .textSelection(.enabled)
                 if let container = app.dataContainerURL {
-                    Text(container.path)
-                        .font(.caption2.monospaced())
-                        .textSelection(.enabled)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Data container (\(app.dataSizeLabel))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text(container.path)
+                            .font(.caption2.monospaced())
+                            .textSelection(.enabled)
+                    }
+                } else {
+                    Text("Không tìm thấy data container cho app này.")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
                 }
             } header: {
                 Text("Đường dẫn")

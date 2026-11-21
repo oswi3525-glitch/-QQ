@@ -30,7 +30,7 @@ struct ProviderKeyRow: View {
                 Image(systemName: cliAvailable ? "checkmark.circle" : "exclamationmark.triangle")
                     .font(.caption2)
                     .foregroundStyle(cliAvailable ? .green : .orange)
-                Text(cliAvailable ? "CLI đã có trong bundle" : "Thiếu CLI trong Resources/node_modules")
+                Text(cliAvailable ? "CLI đã có trong bundle" : "CLI Node không còn nhúng (dùng chat AI native)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

@@ -41,7 +41,7 @@ final class EnvironmentSetup: ObservableObject {
         enum Kind: String {
             case builtin     // do BuiltinShell xử lý
             case bundled     // binary trong app bundle (đã cấp quyền thực thi)
-            case runtime     // node/python trong Documents/.terminal/RuntimeManager
+            case runtime     // Python trong Documents/.terminal/RuntimeManager
             case missing
 
             var isAvailable: Bool { self != .missing }
@@ -124,7 +124,6 @@ final class EnvironmentSetup: ObservableObject {
     /// PATH đầy đủ của phiên hiện tại.
     var pathValue: String {
         renderPath(prefixes: [binDirectory.path,
-                              RuntimeManager.shared.binDirectory(for: .node).path,
                               RuntimeManager.shared.binDirectory(for: .python).path])
     }
 
@@ -143,7 +142,7 @@ final class EnvironmentSetup: ObservableObject {
     // MARK: - Tool discovery
 
     /// Các lệnh Unix mà Terminal phải có (Module 5).
-    static let requiredTools = ["curl", "wget", "tar", "unzip", "zip", "git", "ffmpeg", "python3", "node"]
+    static let requiredTools = ["curl", "wget", "tar", "unzip", "zip", "git", "ffmpeg", "python3"]
 
     /// Quét toolchain: builtin → bundle → runtime.
     func scanTools() -> [ToolInfo] {
@@ -196,7 +195,7 @@ final class EnvironmentSetup: ObservableObject {
             }
         }
 
-        // Runtime nhúng (node/python) nằm trong Documents.
+        // Runtime nhúng (Python) nằm trong Documents.
         for runtime in Runtime.allCases where runtime.rawValue == name {
             if let url = RuntimeManager.shared.binaryURL(for: runtime) {
                 return ToolInfo(name: name, kind: .runtime, detail: url.path)
@@ -209,9 +208,8 @@ final class EnvironmentSetup: ObservableObject {
 
     /// Sinh nội dung `setup_env.sh` từ danh sách tool.
     func renderScript(tools: [ToolInfo]) -> String {
-        let runtimeNode = RuntimeManager.shared.binDirectory(for: .node).path
         let runtimePython = RuntimeManager.shared.binDirectory(for: .python).path
-        let path = renderPath(prefixes: [binDirectory.path, runtimeNode, runtimePython])
+        let path = renderPath(prefixes: [binDirectory.path, runtimePython])
 
         var lines: [String] = [
             "#!/bin/sh",
@@ -225,7 +223,6 @@ final class EnvironmentSetup: ObservableObject {
             "export TERM=xterm-256color",
             "",
             "# Runtime nhúng",
-            "export NODE_PATH=\(shellQuote(runtimeNode + "/../lib/node_modules"))",
             "export PYTHONHOME=\(shellQuote(runtimePython + "/.."))",
             ""
         ]

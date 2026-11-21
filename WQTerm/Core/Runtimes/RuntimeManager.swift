@@ -3,8 +3,9 @@ import Combine
 
 /// Quản lý runtime nhúng (Node.js, Python) — Module 5.
 ///
-/// Runtime nằm trong app bundle (`Resources/python-runtime/`,
-/// `Resources/node-ios-arm64/`). iOS không cho thực thi binary trong bundle (bit
+/// Runtime nằm trong app bundle (`Resources/python-runtime/`). Node.js đã được
+/// lược bỏ để giảm ~53MB; CLI Node không còn chạy, dùng chat AI native thay thế.
+/// iOS không cho thực thi binary trong bundle (bit
 /// `x` bị strip khi build unsigned), nên lần đầu khởi động ta copy sang
 /// `Documents/.terminal/RuntimeManager/` rồi `chmod 0755`; `setup_env.sh` trỏ PATH
 /// vào bản copy đó.
@@ -110,7 +111,7 @@ final class RuntimeManager: ObservableObject {
     ///
     /// Bắt buộc: build unsigned qua CI strip bit `x`, và dyld cần `x` để map dylib.
     private func grantExecutePermissions(under root: URL) {
-        let executables = ["bin/node", "Library/bin/python3", "bin/python3"]
+        let executables = ["Library/bin/python3", "bin/python3"]
         for candidate in executables {
             let url = root.appendingPathComponent(candidate)
             if fileManager.fileExists(atPath: url.path) {

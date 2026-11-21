@@ -73,6 +73,8 @@ struct FileViewerSheet: View {
             TextPreviewView(url: node.url, browser: FileBrowser.shared)
         case .hex:
             HexPreviewView(url: node.url)
+        case .asset3105:
+            Asset3105PreviewView(url: node.url)
         }
     }
 

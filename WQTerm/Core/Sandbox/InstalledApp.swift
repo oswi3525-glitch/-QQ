@@ -14,6 +14,8 @@ struct InstalledApp: Identifiable, Hashable {
     let dataContainerURL: URL?
     /// Đường dẫn icon trong bundle (nếu tìm thấy).
     let iconURL: URL?
+    /// Dung lượng data container (byte), tính một lần khi quét app.
+    let dataSizeBytes: UInt64
 
     var id: String { bundleID }
 
@@ -23,6 +25,11 @@ struct InstalledApp: Identifiable, Hashable {
     /// Kích thước bundle (byte), tính khi cần — có thể chậm với app lớn.
     var bundleSizeBytes: UInt64 {
         FileSystem.directorySize(bundleURL)
+    }
+
+    /// Nhãn dung lượng data container.
+    var dataSizeLabel: String {
+        dataContainerURL == nil ? "—" : BuiltinShell.sizeLabel(dataSizeBytes)
     }
 }
 

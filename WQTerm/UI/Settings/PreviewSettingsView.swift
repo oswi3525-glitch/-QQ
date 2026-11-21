@@ -75,6 +75,7 @@ struct PreviewSettingsView: View {
              .plist),
             ("sample.db", Data("SQLite format 3\u{0}".utf8), .sqlite),
             ("sample.zip", Data([0x50, 0x4B, 0x03, 0x04]), .zip),
+            ("sample.3105", Data([0x50, 0x4B, 0x03, 0x04]), .asset3105),
             ("sample.txt", Data("hello".utf8), .text)
         ]
 

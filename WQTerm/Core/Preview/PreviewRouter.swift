@@ -8,6 +8,8 @@ enum PreviewKind: Equatable {
     case image
     case text
     case hex
+    /// File `.3105` — định dạng đặc thù, probe magic bytes rồi mới quyết định.
+    case asset3105
 
     var displayName: String {
         switch self {
@@ -17,6 +19,7 @@ enum PreviewKind: Equatable {
         case .image: return "Hình ảnh"
         case .text: return "Văn bản"
         case .hex: return "Hex"
+        case .asset3105: return "Asset .3105"
         }
     }
 
@@ -28,6 +31,7 @@ enum PreviewKind: Equatable {
         case .image: return "photo"
         case .text: return "doc.text"
         case .hex: return "number"
+        case .asset3105: return "shippingbox"
         }
     }
 }
@@ -47,6 +51,8 @@ enum PreviewRouter {
             return .sqlite
         case "zip", "ipa", "xcarchive", "jar", "epub":
             return .zip
+        case "3105":
+            return .asset3105
         case "png", "jpg", "jpeg", "heic", "gif", "bmp", "tiff", "webp":
             return .image
         case "txt", "md", "markdown", "json", "xml", "yaml", "yml", "swift",
