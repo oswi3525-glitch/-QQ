@@ -192,7 +192,7 @@ final class PairingManager: ObservableObject {
             transition(.failed, message: message)
             return false
         }
-        guard state == .stopped || state == .failed else {
+        guard state == .stopped || state == .failed || state == .completed else {
             PairingLogger.shared.log(.warn, stage: "STATE", "Bỏ qua beginPairing — đang \(state.rawValue)")
             return false
         }
@@ -221,7 +221,7 @@ final class PairingManager: ObservableObject {
     // MARK: - Host lifecycle
 
     func startHost(force: Bool = false) {
-        guard force || state == .stopped || state == .failed else {
+        guard force || state == .stopped || state == .failed || state == .completed else {
             PairingLogger.shared.log(.warn, stage: "HOST", "startHost bỏ qua — state=\(state.rawValue)")
             return
         }

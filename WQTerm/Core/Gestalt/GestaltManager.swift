@@ -103,8 +103,18 @@ final class GestaltManager {
 
     private let fm = FileManager.default
     private let compatibility = IOSCompatibility.shared
+    private static var writeExtensionRequested = false
 
     private init() {}
+
+    /// Thử xin sandbox extension read-write bằng cơ chế worse_query sẵn có
+    /// (SandboxAccess dùng đúng signature 3 tham số). Không giả lập quyền —
+    /// sau đó vẫn phải probe ghi thực tế mới được phép ghi.
+    private func ensureWriteExtension(for url: URL) {
+        guard !Self.writeExtensionRequested else { return }
+        Self.writeExtensionRequested = true
+        SandboxAccess.grantReadWrite(to: url.resolvingSymlinksInPath().path)
+    }
 
     // MARK: - Discovery
 
@@ -201,6 +211,7 @@ final class GestaltManager {
                                 writeErrorCode: nil, hasSystemGroupEntitlement: false)
         }
         let readable = (try? read()) != nil
+        ensureWriteExtension(for: url)
         let directory = url.resolvingSymlinksInPath().deletingLastPathComponent()
         let code = AtomicFileWriter.writabilityError(in: directory)
         let hasGroup = FileManager.default.containerURL(
@@ -314,6 +325,7 @@ final class GestaltManager {
 
         // 2. Preflight QUYỀN GHI trước khi tạo bất kỳ backup nào.
         //    Đọc được file KHÔNG có nghĩa là ghi được (đây là nguyên nhân errno 1).
+        ensureWriteExtension(for: url)
         let directory = url.resolvingSymlinksInPath().deletingLastPathComponent()
         if let code = AtomicFileWriter.writabilityError(in: directory) {
             let reason = "errno \(code) — kernel từ chối tạo file tạm tại thư mục cache. "
